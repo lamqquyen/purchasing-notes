@@ -373,6 +373,34 @@ const TotalDisplay = styled.div`
   }
 `;
 
+const LoadingOverlay = styled.div`
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(255, 255, 255, 0.95);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+`;
+
+const Spinner = styled.div`
+  width: 48px;
+  height: 48px;
+  border: 4px solid #e2e8f0;
+  border-top-color: #6366f1;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+`;
+
 const requiredMessage = "Trường này là bắt buộc";
 
 function formatDateDDMMYYYY(dateStr: string): string {
@@ -469,6 +497,7 @@ function App() {
   const [spendingItems, setSpendingItems] = useState<SpendingItem[]>([
     { id: "1", description: "", amount: 0 }
   ]);
+  const [isInitialLoading, setIsInitialLoading] = useState(true);
   const {
     register,
     handleSubmit,
@@ -496,6 +525,8 @@ function App() {
         setRecentLogs(recentData);
       } catch (error) {
         console.error("Failed to fetch data:", error);
+      } finally {
+        setIsInitialLoading(false);
       }
     };
     loadData();
@@ -538,76 +569,149 @@ function App() {
 
   const onSubmit = handleSubmit(async (data) => {
     setSubmitState({ status: "submitting" });
-    try {
-      // Convert date from dd/MM/yyyy to yyyy-MM-dd for API
-      const dateForAPI = convertDDMMYYYYToYYYYMMDD(data.occurredAt);
-      
-      if (type === "spending") {
-        // Submit all spending items
-        const validItems = spendingItems.filter(item => item.description.trim() && item.amount > 0);
-        if (validItems.length === 0) {
-          setSubmitState({ status: "error", message: "Vui lòng nhập ít nhất một mục chi tiêu hợp lệ." });
-          return;
-        }
-        
-        // Submit all items in parallel
-        await Promise.all(
-          validItems.map(item =>
-            logEntry({
-              type: "spending",
-              occurredAt: dateForAPI,
-              amount: item.amount,
-              description: item.description,
-            })
-          )
-        );
-      } else {
-        // Submit single receiving item
-        await logEntry({
-          ...data,
-          occurredAt: dateForAPI,
-          type,
-        });
+    
+    // Convert date from dd/MM/yyyy to yyyy-MM-dd for API
+    const dateForAPI = convertDDMMYYYYToYYYYMMDD(data.occurredAt);
+    const currentDate = data.occurredAt;
+    const dateFormatted = formatDateDDMMYYYY(dateForAPI);
+    
+    let itemsToAdd: Array<{ id: string; date: string; description: string; amount: number }> = [];
+    let totalDelta = 0;
+    
+    if (type === "spending") {
+      // Submit all spending items
+      const validItems = spendingItems.filter(item => item.description.trim() && item.amount > 0);
+      if (validItems.length === 0) {
+        setSubmitState({ status: "error", message: "Vui lòng nhập ít nhất một mục chi tiêu hợp lệ." });
+        return;
       }
-
-      setSubmitState({
-        status: "success",
-        message: `Lưu thành công ${type === "spending" ? spendingItems.filter(item => item.description.trim() && item.amount > 0).length : 1} mục!`,
+      
+      // Optimistic update: Add items to recent logs immediately
+      itemsToAdd = validItems.map(item => ({
+        id: `temp-${Date.now()}-${Math.random()}`,
+        date: dateFormatted,
+        description: item.description,
+        amount: item.amount
+      }));
+      
+      totalDelta = -validItems.reduce((sum, item) => sum + item.amount, 0);
+      
+      // Update UI immediately using functional updates to avoid closure issues
+      setRecentLogs(prev => {
+        const base = prev || { spending: [], receiving: [] };
+        return {
+          ...base,
+          spending: [...itemsToAdd, ...(base.spending || [])].slice(0, 10)
+        };
       });
+      setTotal(prev => prev !== null ? prev + totalDelta : prev);
       
-      // Keep the date for "add more" functionality
-      const currentDate = data.occurredAt;
-      setLastSubmittedDate(currentDate);
-      
-      // Reset form
-      if (type === "spending") {
-        setSpendingItems([{ id: Date.now().toString(), description: "", amount: 0 }]);
-      } else {
-        reset({
-          amount: 0,
-          description: "",
-          occurredAt: currentDate,
+      // Call API in background
+      Promise.all(
+        validItems.map(item =>
+          logEntry({
+            type: "spending",
+            occurredAt: dateForAPI,
+            amount: item.amount,
+            description: item.description,
+          })
+        )
+      )
+        .then(async () => {
+          // Only refresh total in background, not recentLogs
+          try {
+            const totalValue = await fetchTotal();
+            setTotal(totalValue);
+          } catch (e) {
+            console.error("Failed to refresh total:", e);
+          }
+        })
+        .catch((error) => {
+          // Revert optimistic update on error using functional updates
+          setRecentLogs(prev => {
+            if (!prev) return { spending: [], receiving: [] };
+            return {
+              ...prev,
+              spending: prev.spending?.filter(item => !itemsToAdd.find(i => i.id === item.id)) || []
+            };
+          });
+          setTotal(prev => prev !== null ? prev - totalDelta : prev);
+          const message = error instanceof Error ? error.message : "Hiện chưa thể ghi giao dịch.";
+          setSubmitState({ status: "error", message });
         });
-        resetField("amount", { defaultValue: 0 });
-      }
+    } else {
+      // Receiving item
+      const amount = data.amount;
+      totalDelta = amount;
       
-      // Switch to recent tab and refetch recent items and total in parallel
-      setActiveTab("recent");
-      try {
-        const [recentData, totalValue] = await Promise.all([
-          fetchRecentItems(10),
-          fetchTotal()
-        ]);
-        setRecentLogs(recentData);
-        setTotal(totalValue);
-      } catch (e) {
-        console.error("Failed to refresh data:", e);
-      }
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Hiện chưa thể ghi giao dịch.";
-      setSubmitState({ status: "error", message });
+      const newItem = {
+        id: `temp-${Date.now()}`,
+        date: dateFormatted,
+        amount: amount
+      };
+      
+      // Update UI immediately using functional updates to avoid closure issues
+      setRecentLogs(prev => {
+        const base = prev || { spending: [], receiving: [] };
+        return {
+          ...base,
+          receiving: [newItem, ...(base.receiving || [])].slice(0, 10)
+        };
+      });
+      setTotal(prev => prev !== null ? prev + totalDelta : prev);
+      
+      // Call API in background
+      logEntry({
+        ...data,
+        occurredAt: dateForAPI,
+        type,
+      })
+        .then(async () => {
+          // Only refresh total in background, not recentLogs
+          try {
+            const totalValue = await fetchTotal();
+            setTotal(totalValue);
+          } catch (e) {
+            console.error("Failed to refresh total:", e);
+          }
+        })
+        .catch((error) => {
+          // Revert optimistic update on error using functional updates
+          setRecentLogs(prev => {
+            if (!prev) return { spending: [], receiving: [] };
+            return {
+              ...prev,
+              receiving: prev.receiving?.filter(item => item.id !== newItem.id) || []
+            };
+          });
+          setTotal(prev => prev !== null ? prev - totalDelta : prev);
+          const message = error instanceof Error ? error.message : "Hiện chưa thể ghi giao dịch.";
+          setSubmitState({ status: "error", message });
+        });
     }
+
+    setSubmitState({
+      status: "success",
+      message: `Lưu thành công ${type === "spending" ? spendingItems.filter(item => item.description.trim() && item.amount > 0).length : 1} mục!`,
+    });
+    
+    // Keep the date for "add more" functionality
+    setLastSubmittedDate(currentDate);
+    
+    // Reset form
+    if (type === "spending") {
+      setSpendingItems([{ id: Date.now().toString(), description: "", amount: 0 }]);
+    } else {
+      reset({
+        amount: 0,
+        description: "",
+        occurredAt: currentDate,
+      });
+      resetField("amount", { defaultValue: 0 });
+    }
+    
+    // Switch to recent tab
+    setActiveTab("recent");
   });
 
   const onFetchLogs = async () => {
@@ -633,38 +737,132 @@ function App() {
 
   const onDeleteEntry = async (id: string, entryType: EntryType) => {
     if (!confirm("Bạn có chắc muốn xóa bản ghi này?")) return;
-    setLogState({ status: "submitting" });
-    try {
-      await deleteEntry(id, entryType);
-      // Refresh data based on active tab
-      if (activeTab === "recent") {
-        const data = await fetchRecentItems(10);
-        setRecentLogs(data);
-      } else if (dateFrom && dateTo) {
-        const data = await fetchLogsByDateRange(dateFrom, dateTo);
-        setLogs(data);
+    
+    // Find the item to get its amount for total calculation
+    let deletedAmount = 0;
+    let deletedItem: { id: string; amount: number; description?: string; date: string } | null = null;
+    
+    // Optimistic update: Remove from UI immediately and calculate total change
+    if (activeTab === "recent" && recentLogs) {
+      if (entryType === "spending") {
+        deletedItem = recentLogs.spending?.find(item => item.id === id) || null;
+        if (deletedItem) {
+          deletedAmount = deletedItem.amount;
+          setRecentLogs({
+            ...recentLogs,
+            spending: recentLogs.spending?.filter(item => item.id !== id) || []
+          });
+        }
+      } else {
+        deletedItem = recentLogs.receiving?.find(item => item.id === id) || null;
+        if (deletedItem) {
+          deletedAmount = deletedItem.amount;
+          setRecentLogs({
+            ...recentLogs,
+            receiving: recentLogs.receiving?.filter(item => item.id !== id) || []
+          });
+        }
       }
-      // Fetch updated total
-      try {
-        const totalValue = await fetchTotal();
-        setTotal(totalValue);
-      } catch (e) {
-        console.error("Failed to refresh total:", e);
+    } else if (activeTab === "filter" && logs) {
+      if (entryType === "spending") {
+        deletedItem = logs.spending?.find(item => item.id === id) || null;
+        if (deletedItem) {
+          deletedAmount = deletedItem.amount;
+          setLogs({
+            ...logs,
+            spending: logs.spending?.filter(item => item.id !== id) || []
+          });
+        }
+      } else {
+        deletedItem = logs.receiving?.find(item => item.id === id) || null;
+        if (deletedItem) {
+          deletedAmount = deletedItem.amount;
+          setLogs({
+            ...logs,
+            receiving: logs.receiving?.filter(item => item.id !== id) || []
+          });
+        }
       }
-      setLogState({ status: "success", message: "Đã xóa bản ghi." });
-    } catch (error) {
-      const message =
-        error instanceof Error ? error.message : "Không thể xóa bản ghi.";
-      setLogState({ status: "error", message });
     }
+    
+    // Update total immediately (spending adds back, receiving subtracts)
+    if (deletedAmount > 0 && total !== null) {
+      const totalDelta = entryType === "spending" ? deletedAmount : -deletedAmount;
+      setTotal(total + totalDelta);
+    }
+    
+    // Call backend in background
+    deleteEntry(id, entryType)
+      .then(async () => {
+        // Only refresh filter tab logs if needed, not recentLogs
+        if (activeTab === "filter" && dateFrom && dateTo) {
+          try {
+            const data = await fetchLogsByDateRange(dateFrom, dateTo);
+            setLogs(data);
+          } catch (e) {
+            console.error("Failed to refresh logs:", e);
+          }
+        }
+        // Fetch updated total in background
+        try {
+          const totalValue = await fetchTotal();
+          setTotal(totalValue);
+        } catch (e) {
+          console.error("Failed to refresh total:", e);
+        }
+      })
+      .catch((error) => {
+        // If backend delete fails, revert optimistic updates
+        if (deletedItem) {
+          if (activeTab === "recent" && recentLogs) {
+            if (entryType === "spending") {
+              setRecentLogs({
+                ...recentLogs,
+                spending: [deletedItem, ...(recentLogs.spending || [])].slice(0, 10)
+              });
+            } else {
+              setRecentLogs({
+                ...recentLogs,
+                receiving: [deletedItem, ...(recentLogs.receiving || [])].slice(0, 10)
+              });
+            }
+          } else if (activeTab === "filter" && logs) {
+            if (entryType === "spending") {
+              setLogs({
+                ...logs,
+                spending: [deletedItem, ...(logs.spending || [])]
+              });
+            } else {
+              setLogs({
+                ...logs,
+                receiving: [deletedItem, ...(logs.receiving || [])]
+              });
+            }
+          }
+        }
+        // Revert total
+        if (deletedAmount > 0 && total !== null) {
+          const totalDelta = entryType === "spending" ? -deletedAmount : deletedAmount;
+          setTotal(total + totalDelta);
+        }
+        const message =
+          error instanceof Error ? error.message : "Không thể xóa bản ghi trên server.";
+        setLogState({ status: "error", message });
+      });
   };
 
 
   return (
     <>
       <GlobalStyle />
-      <Page>
-        <Card>
+      {isInitialLoading && (
+        <LoadingOverlay>
+          <Spinner />
+        </LoadingOverlay>
+      )}
+      {!isInitialLoading && (
+        <Page>
+          <Card>
           <Header>
             <Title>
               <h1>Sổ Ghi Tiền</h1>
@@ -976,8 +1174,9 @@ function App() {
               </>
             )}
           </LogSection>
-        </Card>
-      </Page>
+          </Card>
+        </Page>
+      )}
     </>
   );
 }
