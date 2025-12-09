@@ -13,8 +13,6 @@
 /dist
 /vite.config.ts.timestamp-*
 
-# env
-.env
 
 # misc
 .DS_Store
