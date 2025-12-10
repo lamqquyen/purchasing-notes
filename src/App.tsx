@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { useForm } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import styled, { createGlobalStyle } from "styled-components";
 import {
   deleteEntry,
@@ -22,6 +22,8 @@ type SpendingItem = {
   id: string;
   description: string;
   amount: number;
+  amountError?: string;
+  descriptionError?: string;
 };
 
 type SubmitState =
@@ -184,13 +186,12 @@ const Button = styled.button`
   cursor: pointer;
   background: linear-gradient(135deg, #6366f1, #4f46e5);
   color: #ffffff;
-  box-shadow: 0 12px 30px rgba(99, 102, 241, 0.35);
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   width: 100%;
-
+  
   &:hover {
     transform: translateY(-1px);
-    box-shadow: 0 12px 36px rgba(99, 102, 241, 0.45);
+    opacity: 0.7;
   }
 
   &:disabled {
@@ -230,6 +231,9 @@ const Helper = styled.span`
   font-size: 13px;
   margin-left: 12px;
   color: #64748b;
+  display: block;
+  margin-top: 4px;
+  margin-left: 0;
 `;
 
 const LogSection = styled.section`
@@ -305,6 +309,7 @@ const DeleteButton = styled.button`
   font-weight: 600;
   cursor: pointer;
   transition: all 0.2s ease;
+  flex-shrink: 0;
 
   &:hover {
     background: #fecaca;
@@ -330,6 +335,40 @@ const RemoveButton = styled.button`
 
   &:hover {
     background: #fecaca;
+  }
+`;
+
+const Checkbox = styled.input`
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  accent-color: #6366f1;
+`;
+
+const SelectionControls = styled.div`
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: #f8fafc;
+  border-radius: 10px;
+  margin-bottom: 12px;
+  border: 1px solid #e2e8f0;
+
+  @media (max-width: 768px) {
+    flex-direction: column;
+    align-items: stretch;
+  }
+`;
+
+const SelectionActions = styled.div`
+  display: flex;
+  gap: 8px;
+  align-items: center;
+
+  @media (max-width: 768px) {
+    width: 100%;
   }
 `;
 
@@ -379,7 +418,7 @@ const LoadingOverlay = styled.div`
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(255, 255, 255, 0.95);
+  background: rgba(255, 255, 255, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -402,6 +441,77 @@ const Spinner = styled.div`
 `;
 
 const requiredMessage = "Trường này là bắt buộc";
+
+function formatNumberWithPeriods(value: number | string): string {
+  if (value === "" || value === null || value === undefined) return "";
+  const numValue = typeof value === "string" ? parseFloat(value.replace(/\./g, "")) : value;
+  if (isNaN(numValue)) return "";
+  return numValue.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+}
+
+function parseFormattedNumber(value: string): number {
+  if (!value) return 0;
+  const cleaned = value.replace(/\./g, "");
+  const parsed = parseFloat(cleaned);
+  return isNaN(parsed) ? 0 : parsed;
+}
+
+function sortLogsByDateDesc(logs: SheetLogResponse): SheetLogResponse {
+  const parseDate = (dateStr: string): Date => {
+    // Date format is dd/MM/yyyy
+    const parts = dateStr.split("/");
+    if (parts.length === 3) {
+      const day = parseInt(parts[0], 10);
+      const month = parseInt(parts[1], 10) - 1; // Month is 0-indexed
+      const year = parseInt(parts[2], 10);
+      return new Date(year, month, day);
+    }
+    // Fallback: try to parse as-is
+    return new Date(dateStr);
+  };
+
+  const sorted: SheetLogResponse = { ...logs };
+  
+  if (sorted.spending) {
+    // Create array with original index to preserve creation order
+    const spendingWithIndex = sorted.spending.map((item, index) => ({ item, originalIndex: index }));
+    spendingWithIndex.sort((a, b) => {
+      const dateA = parseDate(a.item.date);
+      const dateB = parseDate(b.item.date);
+      const dateDiff = dateB.getTime() - dateA.getTime(); // Descending (newest first)
+      
+      // If dates are the same, preserve original order (newer items appear first in original array)
+      // Since backend returns newest first, we reverse the original index comparison
+      if (dateDiff === 0) {
+        return b.originalIndex - a.originalIndex; // Items that appeared later in original array come first
+      }
+      
+      return dateDiff;
+    });
+    sorted.spending = spendingWithIndex.map(({ item }) => item);
+  }
+  
+  if (sorted.receiving) {
+    // Create array with original index to preserve creation order
+    const receivingWithIndex = sorted.receiving.map((item, index) => ({ item, originalIndex: index }));
+    receivingWithIndex.sort((a, b) => {
+      const dateA = parseDate(a.item.date);
+      const dateB = parseDate(b.item.date);
+      const dateDiff = dateB.getTime() - dateA.getTime(); // Descending (newest first)
+      
+      // If dates are the same, preserve original order (newer items appear first in original array)
+      // Since backend returns newest first, we reverse the original index comparison
+      if (dateDiff === 0) {
+        return b.originalIndex - a.originalIndex; // Items that appeared later in original array come first
+      }
+      
+      return dateDiff;
+    });
+    sorted.receiving = receivingWithIndex.map(({ item }) => item);
+  }
+  
+  return sorted;
+}
 
 function formatDateDDMMYYYY(dateStr: string): string {
   if (!dateStr) return "";
@@ -495,16 +605,24 @@ function App() {
   const [logState, setLogState] = useState<SubmitState>({ status: "idle" });
   const [lastSubmittedDate, setLastSubmittedDate] = useState<string | null>(null);
   const [spendingItems, setSpendingItems] = useState<SpendingItem[]>([
-    { id: "1", description: "", amount: 0 }
+    { id: "1", description: "", amount: 0, amountError: undefined, descriptionError: undefined }
   ]);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
+  const [isOperationLoading, setIsOperationLoading] = useState(false);
+  const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const {
     register,
     handleSubmit,
     reset,
     resetField,
+    watch,
+    setValue,
+    trigger,
+    control,
     formState: { errors },
   } = useForm<FormValues>({
+    mode: "onBlur",
+    reValidateMode: "onChange",
     defaultValues: {
       amount: 0,
       description: "",
@@ -512,6 +630,9 @@ function App() {
     },
     shouldUnregister: true,
   });
+  
+  const amountValue = watch("amount");
+
 
   // Fetch total and recent items on mount
   useEffect(() => {
@@ -522,7 +643,7 @@ function App() {
           fetchRecentItems(10)
         ]);
         setTotal(totalValue);
-        setRecentLogs(recentData);
+        setRecentLogs(sortLogsByDateDesc(recentData));
       } catch (error) {
         console.error("Failed to fetch data:", error);
       } finally {
@@ -536,7 +657,7 @@ function App() {
     setLogState({ status: "submitting" });
     try {
       const data = await fetchRecentItems(10);
-      setRecentLogs(data);
+      setRecentLogs(sortLogsByDateDesc(data));
       setLogState({ status: "success", message: "Đã tải dữ liệu." });
     } catch (error) {
       const message =
@@ -552,7 +673,7 @@ function App() {
   }, [submitState.status]);
 
   const addSpendingItem = () => {
-    setSpendingItems([...spendingItems, { id: Date.now().toString(), description: "", amount: 0 }]);
+    setSpendingItems([...spendingItems, { id: Date.now().toString(), description: "", amount: 0, amountError: undefined, descriptionError: undefined }]);
   };
 
   const removeSpendingItem = (id: string) => {
@@ -562,53 +683,73 @@ function App() {
   };
 
   const updateSpendingItem = (id: string, field: "description" | "amount", value: string | number) => {
-    setSpendingItems(spendingItems.map(item =>
-      item.id === id ? { ...item, [field]: value } : item
-    ));
+    setSpendingItems(prevItems => prevItems.map(item => {
+      if (item.id === id) {
+        // Don't validate on change, only update the value
+        // Validation will happen on blur
+        return { ...item, [field]: value };
+      }
+      return item;
+    }));
   };
 
   const onSubmit = handleSubmit(async (data) => {
-    setSubmitState({ status: "submitting" });
+    // For receiving type, ensure validation is triggered
+    if (type === "receiving") {
+      // Trigger validation for all fields
+      const isValid = await trigger();
+      if (!isValid) {
+        // Validation failed, errors will be shown by react-hook-form
+        return;
+      }
+    }
     
-    // Convert date from dd/MM/yyyy to yyyy-MM-dd for API
+    // Convert date from dd/MM/yyyy to yyyy-MM-dd for API (needed for both types)
     const dateForAPI = convertDDMMYYYYToYYYYMMDD(data.occurredAt);
     const currentDate = data.occurredAt;
-    const dateFormatted = formatDateDDMMYYYY(dateForAPI);
     
-    let itemsToAdd: Array<{ id: string; date: string; description: string; amount: number }> = [];
-    let totalDelta = 0;
-    
+    // Validate spending items before submitting
     if (type === "spending") {
-      // Submit all spending items
+      // Validate all spending items and set errors
+      let hasErrors = false;
+      const updatedItems = spendingItems.map(item => {
+        const updated = { ...item };
+        if (!item.description.trim()) {
+          updated.descriptionError = requiredMessage;
+          hasErrors = true;
+        } else {
+          updated.descriptionError = undefined;
+        }
+        if (!item.amount || item.amount <= 0) {
+          updated.amountError = "Giá trị phải lớn hơn 0";
+          hasErrors = true;
+        } else {
+          updated.amountError = undefined;
+        }
+        return updated;
+      });
+      
+      // Update state with errors so they display in UI
+      setSpendingItems(updatedItems);
+      
+      if (hasErrors) {
+        setSubmitState({ status: "error", message: "Vui lòng kiểm tra lại các trường đã nhập." });
+        return;
+      }
+      
       const validItems = spendingItems.filter(item => item.description.trim() && item.amount > 0);
       if (validItems.length === 0) {
         setSubmitState({ status: "error", message: "Vui lòng nhập ít nhất một mục chi tiêu hợp lệ." });
         return;
       }
       
-      // Optimistic update: Add items to recent logs immediately
-      itemsToAdd = validItems.map(item => ({
-        id: `temp-${Date.now()}-${Math.random()}`,
-        date: dateFormatted,
-        description: item.description,
-        amount: item.amount
-      }));
+      // Proceed with submission for spending
+      setSubmitState({ status: "submitting" });
+      setIsOperationLoading(true);
       
-      totalDelta = -validItems.reduce((sum, item) => sum + item.amount, 0);
-      
-      // Update UI immediately using functional updates to avoid closure issues
-      setRecentLogs(prev => {
-        const base = prev || { spending: [], receiving: [] };
-        return {
-          ...base,
-          spending: [...itemsToAdd, ...(base.spending || [])].slice(0, 10)
-        };
-      });
-      setTotal(prev => prev !== null ? prev + totalDelta : prev);
-      
-      // Call API in background
+      // Call API
       Promise.all(
-        validItems.map(item =>
+        validItems.map((item: SpendingItem) =>
           logEntry({
             type: "spending",
             occurredAt: dateForAPI,
@@ -618,100 +759,90 @@ function App() {
         )
       )
         .then(async () => {
-          // Only refresh total in background, not recentLogs
+          // Refresh both recentLogs and total
           try {
-            const totalValue = await fetchTotal();
+            const [recentData, totalValue] = await Promise.all([
+              fetchRecentItems(10),
+              fetchTotal()
+            ]);
+            setRecentLogs(sortLogsByDateDesc(recentData));
             setTotal(totalValue);
           } catch (e) {
-            console.error("Failed to refresh total:", e);
+            console.error("Failed to refresh data:", e);
+          } finally {
+            setIsOperationLoading(false);
           }
+          
+          setSubmitState({
+            status: "success",
+            message: `Lưu thành công ${validItems.length} mục!`,
+          });
+          
+          // Keep the date for "add more" functionality
+          setLastSubmittedDate(currentDate);
+          
+          // Reset form
+          setSpendingItems([{ id: Date.now().toString(), description: "", amount: 0, amountError: undefined, descriptionError: undefined }]);
+          
+          // Switch to recent tab
+          setActiveTab("recent");
         })
         .catch((error) => {
-          // Revert optimistic update on error using functional updates
-          setRecentLogs(prev => {
-            if (!prev) return { spending: [], receiving: [] };
-            return {
-              ...prev,
-              spending: prev.spending?.filter(item => !itemsToAdd.find(i => i.id === item.id)) || []
-            };
-          });
-          setTotal(prev => prev !== null ? prev - totalDelta : prev);
           const message = error instanceof Error ? error.message : "Hiện chưa thể ghi giao dịch.";
           setSubmitState({ status: "error", message });
+          setIsOperationLoading(false);
         });
     } else {
-      // Receiving item
-      const amount = data.amount;
-      totalDelta = amount;
+      // Receiving item - react-hook-form already validated via handleSubmit
+      setSubmitState({ status: "submitting" });
+      setIsOperationLoading(true);
       
-      const newItem = {
-        id: `temp-${Date.now()}`,
-        date: dateFormatted,
-        amount: amount
-      };
-      
-      // Update UI immediately using functional updates to avoid closure issues
-      setRecentLogs(prev => {
-        const base = prev || { spending: [], receiving: [] };
-        return {
-          ...base,
-          receiving: [newItem, ...(base.receiving || [])].slice(0, 10)
-        };
-      });
-      setTotal(prev => prev !== null ? prev + totalDelta : prev);
-      
-      // Call API in background
+      // Call API
       logEntry({
         ...data,
         occurredAt: dateForAPI,
         type,
       })
         .then(async () => {
-          // Only refresh total in background, not recentLogs
+          // Refresh both recentLogs and total
           try {
-            const totalValue = await fetchTotal();
+            const [recentData, totalValue] = await Promise.all([
+              fetchRecentItems(10),
+              fetchTotal()
+            ]);
+            setRecentLogs(sortLogsByDateDesc(recentData));
             setTotal(totalValue);
           } catch (e) {
-            console.error("Failed to refresh total:", e);
+            console.error("Failed to refresh data:", e);
+          } finally {
+            setIsOperationLoading(false);
           }
+          
+          setSubmitState({
+            status: "success",
+            message: `Lưu thành công 1 mục!`,
+          });
+          
+          // Keep the date for "add more" functionality
+          setLastSubmittedDate(currentDate);
+          
+          // Reset form
+          reset({
+            amount: 0,
+            description: "",
+            occurredAt: currentDate,
+          });
+          resetField("amount", { defaultValue: 0 });
+          
+          // Switch to recent tab
+          setActiveTab("recent");
         })
         .catch((error) => {
-          // Revert optimistic update on error using functional updates
-          setRecentLogs(prev => {
-            if (!prev) return { spending: [], receiving: [] };
-            return {
-              ...prev,
-              receiving: prev.receiving?.filter(item => item.id !== newItem.id) || []
-            };
-          });
-          setTotal(prev => prev !== null ? prev - totalDelta : prev);
           const message = error instanceof Error ? error.message : "Hiện chưa thể ghi giao dịch.";
           setSubmitState({ status: "error", message });
+          setIsOperationLoading(false);
         });
     }
-
-    setSubmitState({
-      status: "success",
-      message: `Lưu thành công ${type === "spending" ? spendingItems.filter(item => item.description.trim() && item.amount > 0).length : 1} mục!`,
-    });
-    
-    // Keep the date for "add more" functionality
-    setLastSubmittedDate(currentDate);
-    
-    // Reset form
-    if (type === "spending") {
-      setSpendingItems([{ id: Date.now().toString(), description: "", amount: 0 }]);
-    } else {
-      reset({
-        amount: 0,
-        description: "",
-        occurredAt: currentDate,
-      });
-      resetField("amount", { defaultValue: 0 });
-    }
-    
-    // Switch to recent tab
-    setActiveTab("recent");
   });
 
   const onFetchLogs = async () => {
@@ -726,7 +857,7 @@ function App() {
     setLogState({ status: "submitting" });
     try {
       const data = await fetchLogsByDateRange(dateFrom, dateTo);
-      setLogs(data);
+      setLogs(sortLogsByDateDesc(data));
       setLogState({ status: "success", message: "Đã tải dữ liệu." });
     } catch (error) {
       const message =
@@ -735,119 +866,126 @@ function App() {
     }
   };
 
-  const onDeleteEntry = async (id: string, entryType: EntryType) => {
-    if (!confirm("Bạn có chắc muốn xóa bản ghi này?")) return;
-    
-    // Find the item to get its amount for total calculation
-    let deletedAmount = 0;
-    let deletedItem: { id: string; amount: number; description?: string; date: string } | null = null;
-    
-    // Optimistic update: Remove from UI immediately and calculate total change
+  const toggleItemSelection = (id: string, entryType: EntryType) => {
+    const key = `${entryType}:${id}`;
+    setSelectedItems(prev => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+
+  const selectAllItems = () => {
+    const allItems = new Set<string>();
     if (activeTab === "recent" && recentLogs) {
-      if (entryType === "spending") {
-        deletedItem = recentLogs.spending?.find(item => item.id === id) || null;
-        if (deletedItem) {
-          deletedAmount = deletedItem.amount;
-          setRecentLogs({
-            ...recentLogs,
-            spending: recentLogs.spending?.filter(item => item.id !== id) || []
-          });
-        }
-      } else {
-        deletedItem = recentLogs.receiving?.find(item => item.id === id) || null;
-        if (deletedItem) {
-          deletedAmount = deletedItem.amount;
-          setRecentLogs({
-            ...recentLogs,
-            receiving: recentLogs.receiving?.filter(item => item.id !== id) || []
-          });
-        }
-      }
+      recentLogs.spending?.forEach(item => allItems.add(`spending:${item.id}`));
+      recentLogs.receiving?.forEach(item => allItems.add(`receiving:${item.id}`));
     } else if (activeTab === "filter" && logs) {
-      if (entryType === "spending") {
-        deletedItem = logs.spending?.find(item => item.id === id) || null;
-        if (deletedItem) {
-          deletedAmount = deletedItem.amount;
-          setLogs({
-            ...logs,
-            spending: logs.spending?.filter(item => item.id !== id) || []
-          });
-        }
-      } else {
-        deletedItem = logs.receiving?.find(item => item.id === id) || null;
-        if (deletedItem) {
-          deletedAmount = deletedItem.amount;
-          setLogs({
-            ...logs,
-            receiving: logs.receiving?.filter(item => item.id !== id) || []
-          });
-        }
-      }
+      logs.spending?.forEach(item => allItems.add(`spending:${item.id}`));
+      logs.receiving?.forEach(item => allItems.add(`receiving:${item.id}`));
     }
-    
-    // Update total immediately (spending adds back, receiving subtracts)
-    if (deletedAmount > 0 && total !== null) {
-      const totalDelta = entryType === "spending" ? deletedAmount : -deletedAmount;
-      setTotal(total + totalDelta);
-    }
-    
-    // Call backend in background
-    deleteEntry(id, entryType)
+    setSelectedItems(allItems);
+  };
+
+  const clearSelection = () => {
+    setSelectedItems(new Set());
+  };
+
+  const onDeleteMultipleEntries = async () => {
+    if (selectedItems.size === 0) return;
+    if (!confirm(`Bạn có chắc muốn xóa ${selectedItems.size} bản ghi đã chọn?`)) return;
+
+    // Parse selected items into {id, type} pairs
+    const itemsToDelete: Array<{ id: string; type: EntryType }> = [];
+
+    selectedItems.forEach(key => {
+      const [type, id] = key.split(':') as [EntryType, string];
+      itemsToDelete.push({ id, type });
+    });
+
+    // Clear selection
+    setSelectedItems(new Set());
+
+    // Show loading overlay
+    setIsOperationLoading(true);
+
+    // Call backend
+    Promise.all(itemsToDelete.map(({ id, type }) => deleteEntry(id, type)))
       .then(async () => {
-        // Only refresh filter tab logs if needed, not recentLogs
-        if (activeTab === "filter" && dateFrom && dateTo) {
-          try {
-            const data = await fetchLogsByDateRange(dateFrom, dateTo);
-            setLogs(data);
-          } catch (e) {
-            console.error("Failed to refresh logs:", e);
-          }
-        }
-        // Fetch updated total in background
+        // Refresh both recentLogs and total, and filter tab logs if needed
         try {
-          const totalValue = await fetchTotal();
-          setTotal(totalValue);
+          const promises: Promise<any>[] = [fetchTotal()];
+          
+          if (activeTab === "recent") {
+            promises.push(fetchRecentItems(10));
+          } else if (activeTab === "filter" && dateFrom && dateTo) {
+            promises.push(fetchLogsByDateRange(dateFrom, dateTo));
+          }
+          
+          const results = await Promise.all(promises);
+          setTotal(results[0]);
+          
+          if (activeTab === "recent" && results[1]) {
+            setRecentLogs(sortLogsByDateDesc(results[1]));
+          } else if (activeTab === "filter" && results[1]) {
+            setLogs(sortLogsByDateDesc(results[1]));
+          }
         } catch (e) {
-          console.error("Failed to refresh total:", e);
+          console.error("Failed to refresh data:", e);
+        } finally {
+          setIsOperationLoading(false);
         }
       })
       .catch((error) => {
-        // If backend delete fails, revert optimistic updates
-        if (deletedItem) {
-          if (activeTab === "recent" && recentLogs) {
-            if (entryType === "spending") {
-              setRecentLogs({
-                ...recentLogs,
-                spending: [deletedItem, ...(recentLogs.spending || [])].slice(0, 10)
-              });
-            } else {
-              setRecentLogs({
-                ...recentLogs,
-                receiving: [deletedItem, ...(recentLogs.receiving || [])].slice(0, 10)
-              });
-            }
-          } else if (activeTab === "filter" && logs) {
-            if (entryType === "spending") {
-              setLogs({
-                ...logs,
-                spending: [deletedItem, ...(logs.spending || [])]
-              });
-            } else {
-              setLogs({
-                ...logs,
-                receiving: [deletedItem, ...(logs.receiving || [])]
-              });
-            }
-          }
-        }
-        // Revert total
-        if (deletedAmount > 0 && total !== null) {
-          const totalDelta = entryType === "spending" ? -deletedAmount : deletedAmount;
-          setTotal(total + totalDelta);
-        }
         const message =
           error instanceof Error ? error.message : "Không thể xóa bản ghi trên server.";
         setLogState({ status: "error", message });
+        setIsOperationLoading(false);
+      });
+  };
+
+  const onDeleteEntry = async (id: string, entryType: EntryType) => {
+    if (!confirm("Bạn có chắc muốn xóa bản ghi này?")) return;
+    
+    // Show loading overlay
+    setIsOperationLoading(true);
+    
+    // Call backend
+    deleteEntry(id, entryType)
+      .then(async () => {
+        // Refresh both recentLogs and total, and filter tab logs if needed
+        try {
+          const promises: Promise<any>[] = [fetchTotal()];
+          
+          if (activeTab === "recent") {
+            promises.push(fetchRecentItems(10));
+          } else if (activeTab === "filter" && dateFrom && dateTo) {
+            promises.push(fetchLogsByDateRange(dateFrom, dateTo));
+          }
+          
+          const results = await Promise.all(promises);
+          setTotal(results[0]);
+          
+          if (activeTab === "recent" && results[1]) {
+            setRecentLogs(sortLogsByDateDesc(results[1]));
+          } else if (activeTab === "filter" && results[1]) {
+            setLogs(sortLogsByDateDesc(results[1]));
+          }
+        } catch (e) {
+          console.error("Failed to refresh data:", e);
+        } finally {
+          setIsOperationLoading(false);
+        }
+      })
+      .catch((error) => {
+        const message =
+          error instanceof Error ? error.message : "Không thể xóa bản ghi trên server.";
+        setLogState({ status: "error", message });
+        setIsOperationLoading(false);
       });
   };
 
@@ -855,7 +993,7 @@ function App() {
   return (
     <>
       <GlobalStyle />
-      {isInitialLoading && (
+      {(isInitialLoading || isOperationLoading) && (
         <LoadingOverlay>
           <Spinner />
         </LoadingOverlay>
@@ -885,7 +1023,7 @@ function App() {
                   type="button"
                   onClick={() => {
                     setType("spending");
-                    setSpendingItems([{ id: Date.now().toString(), description: "", amount: 0 }]);
+                    setSpendingItems([{ id: Date.now().toString(), description: "", amount: 0, amountError: undefined, descriptionError: undefined }]);
                   }}
                   $active={type === "spending"}
                 >
@@ -895,7 +1033,7 @@ function App() {
                   type="button"
                   onClick={() => {
                     setType("receiving");
-                    setSpendingItems([{ id: Date.now().toString(), description: "", amount: 0 }]);
+                    setSpendingItems([{ id: Date.now().toString(), description: "", amount: 0, amountError: undefined, descriptionError: undefined }]);
                   }}
                   $active={type === "receiving"}
                 >
@@ -929,19 +1067,63 @@ function App() {
                           type="text"
                           value={item.description}
                           onChange={(e) => updateSpendingItem(item.id, "description", e.target.value)}
+                          onBlur={() => {
+                            // Validate description on blur
+                            setSpendingItems(prevItems => prevItems.map(i => {
+                              if (i.id === item.id) {
+                                if (!i.description.trim()) {
+                                  return { ...i, descriptionError: requiredMessage };
+                                } else {
+                                  return { ...i, descriptionError: undefined };
+                                }
+                              }
+                              return i;
+                            }));
+                          }}
                           placeholder="Mô tả chi tiêu"
                         />
+                        {item.descriptionError && (
+                          <Helper style={{ color: "#dc2626", marginTop: "4px", display: "block" }}>
+                            {item.descriptionError}
+                          </Helper>
+                        )}
                       </Field>
                       <Field>
                         Số tiền
                         <Input
-                          type="number"
-                          step="1000"
-                          min="1"
+                          type="text"
                           placeholder="0"
-                          value={item.amount || ""}
-                          onChange={(e) => updateSpendingItem(item.id, "amount", Number(e.target.value) || 0)}
+                          value={formatNumberWithPeriods(item.amount)}
+                          onChange={(e) => {
+                            const inputValue = e.target.value;
+                            // If input is empty, set to 0 and show error
+                            if (inputValue === "" || inputValue.trim() === "") {
+                              updateSpendingItem(item.id, "amount", 0);
+                            } else {
+                              const parsed = parseFormattedNumber(inputValue);
+                              updateSpendingItem(item.id, "amount", parsed);
+                            }
+                          }}
+                          onBlur={() => {
+                            // Validate on blur using functional update
+                            const numValue = item.amount;
+                            setSpendingItems(prevItems => prevItems.map(i => {
+                              if (i.id === item.id) {
+                                if (!numValue || numValue <= 0 || isNaN(numValue)) {
+                                  return { ...i, amountError: "Giá trị phải lớn hơn 0" };
+                                } else {
+                                  return { ...i, amountError: undefined };
+                                }
+                              }
+                              return i;
+                            }));
+                          }}
                         />
+                        {item.amountError && (
+                          <Helper style={{ color: "#dc2626", marginTop: "4px", display: "block" }}>
+                            {item.amountError}
+                          </Helper>
+                        )}
                       </Field>
                     </div>
                     {spendingItems.length > 1 && (
@@ -965,18 +1147,43 @@ function App() {
             ) : (
               <Field>
                 Số tiền
-                <Input
-                  type="number"
-                  step="1000"
-                  min="1000"
-                  placeholder="0"
-                  {...register("amount", {
+                <Controller
+                  name="amount"
+                  control={control}
+                  rules={{
                     required: requiredMessage,
-                    valueAsNumber: true,
-                    min: { value: 1, message: "Giá trị phải lớn hơn 0" },
-                  })}
+                    validate: (value) => {
+                      const numValue = typeof value === "number" ? value : parseFloat(value);
+                      if (!numValue || numValue <= 0) {
+                        return "Giá trị phải lớn hơn 0";
+                      }
+                      return true;
+                    }
+                  }}
+                  render={({ field, fieldState }) => (
+                    <>
+                      <Input
+                        type="text"
+                        placeholder="0"
+                        value={formatNumberWithPeriods(field.value || 0)}
+                        onChange={(e) => {
+                          const parsed = parseFormattedNumber(e.target.value);
+                          field.onChange(parsed);
+                        }}
+                        onBlur={(e) => {
+                          field.onBlur();
+                          // Trigger validation on blur
+                          trigger("amount");
+                        }}
+                      />
+                      {(fieldState.error || errors.amount) && (
+                        <Helper style={{ color: "#dc2626", marginTop: "4px", display: "block" }}>
+                          {fieldState.error?.message || errors.amount?.message}
+                        </Helper>
+                      )}
+                    </>
+                  )}
                 />
-                {errors.amount && <Helper>{errors.amount.message}</Helper>}
               </Field>
             )}
 
@@ -1007,6 +1214,7 @@ function App() {
                 $active={activeTab === "recent"}
                 onClick={() => {
                   setActiveTab("recent");
+                  setSelectedItems(new Set());
                   if (!recentLogs) {
                     onFetchRecentItems();
                   }
@@ -1017,7 +1225,10 @@ function App() {
               <Tab
                 type="button"
                 $active={activeTab === "filter"}
-                onClick={() => setActiveTab("filter")}
+                onClick={() => {
+                  setActiveTab("filter");
+                  setSelectedItems(new Set());
+                }}
               >
                 Lọc theo ngày
               </Tab>
@@ -1044,51 +1255,97 @@ function App() {
                 )}
 
                 {recentLogs && logState.status !== "submitting" && (
-                  <LogList>
-                    <div>
-                      <strong>Chi tiền</strong>
-                      {recentLogs.spending?.length ? (
-                        <LogRowContainer>
-                          {recentLogs.spending.map((item, idx) => (
-                            <LogRow key={`sp-${item.id || idx}`}>
-                              <span>{formatDateDDMMYYYY(item.date)}</span>
-                              <span>{item.description || "—"}</span>
-                              <strong>{item.amount.toLocaleString("vi-VN")}</strong>
+                  <>
+                    {(recentLogs.spending?.length || recentLogs.receiving?.length) && (
+                      <SelectionControls>
+                        <span style={{ fontSize: 14, color: "#64748b" }}>
+                          {selectedItems.size > 0 ? `Đã chọn ${selectedItems.size} mục` : "Chọn nhiều mục để xóa"}
+                        </span>
+                        <SelectionActions>
+                          <Button
+                            type="button"
+                            onClick={selectAllItems}
+                            style={{ background: "#e0e7ff", color: "#4338ca", fontSize: 12, padding: "6px 12px", flex: 1 }}
+                          >
+                            Chọn tất cả
+                          </Button>
+                          {selectedItems.size > 0 && (
+                            <>
+                              <Button
+                                type="button"
+                                onClick={clearSelection}
+                                style={{ background: "#f1f5f9", color: "#64748b", fontSize: 12, padding: "6px 12px", flex: 1 }}
+                              >
+                                Bỏ chọn
+                              </Button>
                               <DeleteButton
                                 type="button"
-                                onClick={() => onDeleteEntry(item.id, "spending")}
+                                onClick={onDeleteMultipleEntries}
+                                style={{flex: 1}}
                               >
-                                Xóa
+                                Xóa {selectedItems.size} mục
                               </DeleteButton>
-                            </LogRow>
-                          ))}
-                        </LogRowContainer>
-                      ) : (
-                        <Helper>Không có bản ghi chi tiêu.</Helper>
-                      )}
-                    </div>
-                    <div>
-                      <strong>Nhận tiền</strong>
-                      {recentLogs.receiving?.length ? (
-                        <LogRowContainer>
-                          {recentLogs.receiving.map((item, idx) => (
-                            <LogRow key={`rc-${item.id || idx}`}>
-                              <span>{formatDateDDMMYYYY(item.date)}</span>
-                              <strong>{item.amount.toLocaleString("vi-VN")}</strong>
-                              <DeleteButton
-                                type="button"
-                                onClick={() => onDeleteEntry(item.id, "receiving")}
-                              >
-                                Xóa
-                              </DeleteButton>
-                            </LogRow>
-                          ))}
-                        </LogRowContainer>
-                      ) : (
-                        <Helper>Không có bản ghi nhận tiền.</Helper>
-                      )}
-                    </div>
-                  </LogList>
+                            </>
+                          )}
+                        </SelectionActions>
+                      </SelectionControls>
+                    )}
+                    <LogList>
+                      <div>
+                        <strong>Chi tiền</strong>
+                        {recentLogs.spending?.length ? (
+                          <LogRowContainer>
+                            {recentLogs.spending.map((item, idx) => (
+                              <LogRow key={`sp-${item.id || idx}`}>
+                                <Checkbox
+                                  type="checkbox"
+                                  checked={selectedItems.has(`spending:${item.id}`)}
+                                  onChange={() => toggleItemSelection(item.id, "spending")}
+                                />
+                                <span style={{flex: 1}}>{formatDateDDMMYYYY(item.date)}</span>
+                                <span style={{flex: 3}}>{item.description || "—"}</span>
+                                <strong style={{flex: 1, display:'flex', justifyContent: 'flex-end'}}>{item.amount.toLocaleString("vi-VN")}</strong>
+                                <DeleteButton
+                                  type="button"
+                                  onClick={() => onDeleteEntry(item.id, "spending")}
+                                >
+                                  Xóa
+                                </DeleteButton>
+                              </LogRow>
+                            ))}
+                          </LogRowContainer>
+                        ) : (
+                          <Helper>Không có bản ghi chi tiêu.</Helper>
+                        )}
+                      </div>
+                      <div>
+                        <strong>Nhận tiền</strong>
+                        {recentLogs.receiving?.length ? (
+                          <LogRowContainer>
+                            {recentLogs.receiving.map((item, idx) => (
+                              <LogRow key={`rc-${item.id || idx}`}>
+                                <Checkbox
+                                  type="checkbox"
+                                  checked={selectedItems.has(`receiving:${item.id}`)}
+                                  onChange={() => toggleItemSelection(item.id, "receiving")}
+                                />
+                                <span style={{flex: 1}}>{formatDateDDMMYYYY(item.date)}</span>
+                                <strong style={{flex: 1, display:'flex', justifyContent: 'flex-end'}}>{item.amount.toLocaleString("vi-VN")}</strong>
+                                <DeleteButton
+                                  type="button"
+                                  onClick={() => onDeleteEntry(item.id, "receiving")}
+                                >
+                                  Xóa
+                                </DeleteButton>
+                              </LogRow>
+                            ))}
+                          </LogRowContainer>
+                        ) : (
+                          <Helper>Không có bản ghi nhận tiền.</Helper>
+                        )}
+                      </div>
+                    </LogList>
+                  </>
                 )}
               </>
             )}
@@ -1125,51 +1382,96 @@ function App() {
                 )}
 
                 {logs && logState.status !== "submitting" && (
-                  <LogList>
-                    <div>
-                      <strong>Chi tiền</strong>
-                      {logs.spending?.length ? (
-                        <LogRowContainer>
-                          {logs.spending.map((item, idx) => (
-                            <LogRow key={`sp-${item.id || idx}`}>
-                              <span>{formatDateDDMMYYYY(item.date)}</span>
-                              <span>{item.description || "—"}</span>
-                              <strong>{item.amount.toLocaleString("vi-VN")}</strong>
+                  <>
+                    {(logs.spending?.length || logs.receiving?.length) && (
+                      <SelectionControls>
+                        <span style={{ fontSize: 14, color: "#64748b" }}>
+                          {selectedItems.size > 0 ? `Đã chọn ${selectedItems.size} mục` : "Chọn nhiều mục để xóa"}
+                        </span>
+                        <SelectionActions>
+                          <Button
+                            type="button"
+                            onClick={selectAllItems}
+                            style={{ background: "#e0e7ff", color: "#4338ca", fontSize: 12, padding: "6px 12px" }}
+                          >
+                            Chọn tất cả
+                          </Button>
+                          {selectedItems.size > 0 && (
+                            <>
+                              <Button
+                                type="button"
+                                onClick={clearSelection}
+                                style={{ background: "#f1f5f9", color: "#64748b", fontSize: 12, padding: "6px 12px" }}
+                              >
+                                Bỏ chọn
+                              </Button>
                               <DeleteButton
                                 type="button"
-                                onClick={() => onDeleteEntry(item.id, "spending")}
+                                onClick={onDeleteMultipleEntries}
                               >
-                                Xóa
+                                Xóa {selectedItems.size} mục
                               </DeleteButton>
-                            </LogRow>
-                          ))}
-                        </LogRowContainer>
-                      ) : (
-                        <Helper>Không có bản ghi chi tiêu.</Helper>
-                      )}
-                    </div>
-                    <div>
-                      <strong>Nhận tiền</strong>
-                      {logs.receiving?.length ? (
-                        <LogRowContainer>
-                          {logs.receiving.map((item, idx) => (
-                            <LogRow key={`rc-${item.id || idx}`}>
-                              <span>{formatDateDDMMYYYY(item.date)}</span>
-                              <strong>{item.amount.toLocaleString("vi-VN")}</strong>
-                              <DeleteButton
-                                type="button"
-                                onClick={() => onDeleteEntry(item.id, "receiving")}
-                              >
-                                Xóa
-                              </DeleteButton>
-                            </LogRow>
-                          ))}
-                        </LogRowContainer>
-                      ) : (
-                        <Helper>Không có bản ghi nhận tiền.</Helper>
-                      )}
-                    </div>
-                  </LogList>
+                            </>
+                          )}
+                        </SelectionActions>
+                      </SelectionControls>
+                    )}
+                    <LogList>
+                      <div>
+                        <strong>Chi tiền</strong>
+                        {logs.spending?.length ? (
+                          <LogRowContainer>
+                            {logs.spending.map((item, idx) => (
+                              <LogRow key={`sp-${item.id || idx}`}>
+                                <Checkbox
+                                  type="checkbox"
+                                  checked={selectedItems.has(`spending:${item.id}`)}
+                                  onChange={() => toggleItemSelection(item.id, "spending")}
+                                />
+                                <span>{formatDateDDMMYYYY(item.date)}</span>
+                                <span>{item.description || "—"}</span>
+                                <strong>{item.amount.toLocaleString("vi-VN")}</strong>
+                                <DeleteButton
+                                  type="button"
+                                  onClick={() => onDeleteEntry(item.id, "spending")}
+                                >
+                                  Xóa
+                                </DeleteButton>
+                              </LogRow>
+                            ))}
+                          </LogRowContainer>
+                        ) : (
+                          <Helper>Không có bản ghi chi tiêu.</Helper>
+                        )}
+                      </div>
+                      <div>
+                        <strong>Nhận tiền</strong>
+                        {logs.receiving?.length ? (
+                          <LogRowContainer>
+                            {logs.receiving.map((item, idx) => (
+                              <LogRow key={`rc-${item.id || idx}`}>
+                                <Checkbox
+                                  type="checkbox"
+                                  checked={selectedItems.has(`receiving:${item.id}`)}
+                                  onChange={() => toggleItemSelection(item.id, "receiving")}
+                                />
+                                <span>{formatDateDDMMYYYY(item.date)}</span>
+                                <strong>{item.amount.toLocaleString("vi-VN")}</strong>
+                                <DeleteButton
+                                  type="button"
+                                  onClick={() => onDeleteEntry(item.id, "receiving")}
+                                >
+                                  Xóa
+                                </DeleteButton>
+                              </LogRow>
+                            ))}
+                          </LogRowContainer>
+                        ) : (
+                          <Helper>Không có bản ghi nhận tiền.</Helper>
+                        )}
+                      </div>
+                    </LogList>
+                  </>
                 )}
               </>
             )}
