@@ -1,6 +1,6 @@
 import { Controller } from "react-hook-form";
 import type { Control, FieldErrors, UseFormRegister, UseFormReset, UseFormResetField, UseFormSetValue, UseFormTrigger, UseFormWatch } from "react-hook-form";
-import type { EntryType, FormValues, SpendingItem, SubmitState } from "../types";
+import type { EntryType, FormValues, SpendingItem, SpendingStatus, SubmitState } from "../types";
 import { formatNumberWithPeriods, parseFormattedNumber, requiredMessage } from "../utils";
 import {
   Form,
@@ -27,7 +27,7 @@ interface TransactionFormProps {
   amountValue: number;
   trigger: UseFormTrigger<FormValues>;
   onTypeChange: (type: EntryType) => void;
-  onSpendingItemChange: (id: string, field: "description" | "amount", value: string | number) => void;
+  onSpendingItemChange: (id: string, field: "description" | "amount" | "status", value: string | number | SpendingStatus) => void;
   onSpendingItemBlur: (id: string, field: "description" | "amount", value: string | number) => void;
   onAddSpendingItem: () => void;
   onRemoveSpendingItem: (id: string) => void;
@@ -55,28 +55,7 @@ export function TransactionForm({
     <>
       <Form onSubmit={onSubmit} noValidate>
         <Field>
-          Loại giao dịch
-          <SelectRow>
-            <SelectButton
-              type="button"
-              onClick={() => onTypeChange("spending")}
-              $active={type === "spending"}
-            >
-              Chi tiền
-            </SelectButton>
-            <SelectButton
-              type="button"
-              onClick={() => onTypeChange("receiving")}
-              $active={type === "receiving"}
-            >
-              Nhận tiền
-            </SelectButton>
-          </SelectRow>
-          <Helper>Chọn loại nhãn cho khoản này.</Helper>
-        </Field>
-
-        <Field>
-          Ngày
+          Date
           <Input
             type="date"
             {...register("occurredAt", { 
@@ -88,115 +67,99 @@ export function TransactionForm({
           )}
         </Field>
 
-        {type === "spending" ? (
-          <div style={{ display: "grid", gap: "12px" }}>
-            {spendingItems.map((item) => (
-              <ItemRow key={item.id}>
-                <div style={{ display: "grid", gap: "8px" }}>
-                  <Field>
-                    Dùng cho việc gì?
-                    <Input
-                      type="text"
-                      value={item.description}
-                      onChange={(e) => onSpendingItemChange(item.id, "description", e.target.value)}
-                      onBlur={() => {
-                        const value = item.description;
-                        onSpendingItemBlur(item.id, "description", value);
-                      }}
-                      placeholder="Mô tả chi tiêu"
-                    />
-                    {item.descriptionError && (
-                      <Helper style={{ color: "#dc2626", marginTop: "4px", display: "block" }}>
-                        {item.descriptionError}
-                      </Helper>
-                    )}
-                  </Field>
-                  <Field>
-                    Số tiền
-                    <Input
-                      type="text"
-                      placeholder="0"
-                      value={formatNumberWithPeriods(item.amount)}
-                      onChange={(e) => {
-                        const inputValue = e.target.value;
-                        if (inputValue === "" || inputValue.trim() === "") {
-                          onSpendingItemChange(item.id, "amount", 0);
-                        } else {
-                          const parsed = parseFormattedNumber(inputValue);
-                          onSpendingItemChange(item.id, "amount", parsed);
-                        }
-                      }}
-                      onBlur={() => {
-                        const value = item.amount;
-                        onSpendingItemBlur(item.id, "amount", value);
-                      }}
-                    />
-                    {item.amountError && (
-                      <Helper style={{ color: "#dc2626", marginTop: "4px", display: "block" }}>
-                        {item.amountError}
-                      </Helper>
-                    )}
-                  </Field>
-                </div>
-                {spendingItems.length > 1 && (
-                  <RemoveButton
-                    type="button"
-                    onClick={() => onRemoveSpendingItem(item.id)}
-                  >
-                    Xóa
-                  </RemoveButton>
-                )}
-              </ItemRow>
-            ))}
-            <Button
-              type="button"
-              onClick={onAddSpendingItem}
-              style={{ background: "#e0e7ff", color: "#4338ca" }}
-            >
-              + Thêm mục
-            </Button>
-          </div>
-        ) : (
-          <Field>
-            Số tiền
-            <Controller
-              name="amount"
-              control={control}
-              rules={{
-                required: requiredMessage,
-                validate: (value) => {
-                  const numValue = typeof value === "number" ? value : parseFloat(value);
-                  if (!numValue || numValue <= 0) {
-                    return "Giá trị phải lớn hơn 0";
-                  }
-                  return true;
-                }
-              }}
-              render={({ field, fieldState }) => (
-                <>
+        <div style={{ display: "grid", gap: "12px" }}>
+          {spendingItems.map((item) => (
+            <ItemRow key={item.id}>
+              <div style={{ display: "grid", gap: "8px" }}>
+                <Field>
+                  What is this for?
+                  <Input
+                    type="text"
+                    value={item.description}
+                    onChange={(e) => onSpendingItemChange(item.id, "description", e.target.value)}
+                    onBlur={() => {
+                      const value = item.description;
+                      onSpendingItemBlur(item.id, "description", value);
+                    }}
+                    placeholder="Expense description"
+                  />
+                  {item.descriptionError && (
+                    <Helper style={{ color: "#dc2626", marginTop: "4px", display: "block" }}>
+                      {item.descriptionError}
+                    </Helper>
+                  )}
+                </Field>
+                <Field>
+                  Amount
                   <Input
                     type="text"
                     placeholder="0"
-                    value={formatNumberWithPeriods(field.value || 0)}
+                    value={formatNumberWithPeriods(item.amount)}
                     onChange={(e) => {
-                      const parsed = parseFormattedNumber(e.target.value);
-                      field.onChange(parsed);
+                      const inputValue = e.target.value;
+                      if (inputValue === "" || inputValue.trim() === "") {
+                        onSpendingItemChange(item.id, "amount", 0);
+                      } else {
+                        const parsed = parseFormattedNumber(inputValue);
+                        onSpendingItemChange(item.id, "amount", parsed);
+                      }
                     }}
-                    onBlur={(e) => {
-                      field.onBlur();
-                      trigger("amount");
+                    onBlur={() => {
+                      const value = item.amount;
+                      onSpendingItemBlur(item.id, "amount", value);
                     }}
                   />
-                  {(fieldState.error || errors.amount) && (
+                  {item.amountError && (
                     <Helper style={{ color: "#dc2626", marginTop: "4px", display: "block" }}>
-                      {fieldState.error?.message || errors.amount?.message}
+                      {item.amountError}
                     </Helper>
                   )}
-                </>
+                </Field>
+                <Field>
+                  Status
+                  <SelectRow>
+                    <SelectButton
+                      type="button"
+                      onClick={() => onSpendingItemChange(item.id, "status", "spent")}
+                      $active={item.status === "spent"}
+                    >
+                      Spent
+                    </SelectButton>
+                    <SelectButton
+                      type="button"
+                      onClick={() => onSpendingItemChange(item.id, "status", "requested")}
+                      $active={item.status === "requested"}
+                    >
+                      Requested
+                    </SelectButton>
+                    <SelectButton
+                      type="button"
+                      onClick={() => onSpendingItemChange(item.id, "status", "claimed")}
+                      $active={item.status === "claimed"}
+                    >
+                      Claimed
+                    </SelectButton>
+                  </SelectRow>
+                </Field>
+              </div>
+              {spendingItems.length > 1 && (
+                <RemoveButton
+                  type="button"
+                  onClick={() => onRemoveSpendingItem(item.id)}
+                >
+                  Remove
+                </RemoveButton>
               )}
-            />
-          </Field>
-        )}
+            </ItemRow>
+          ))}
+          <Button
+            type="button"
+            onClick={onAddSpendingItem}
+            style={{ background: "rgba(33, 53, 96, 0.1)", color: "#213560" }}
+          >
+            + Add Item
+          </Button>
+        </div>
 
         <Actions>
           <Button
@@ -204,8 +167,8 @@ export function TransactionForm({
             disabled={submitState.status === "submitting"}
           >
             {submitState.status === "submitting"
-              ? "Đang lưu…"
-              : "Lưu"}
+              ? "Saving…"
+              : "Save"}
           </Button>
         </Actions>
       </Form>
@@ -213,7 +176,7 @@ export function TransactionForm({
       {submitState.status !== "idle" && (
         <Status $tone={statusTone}>
           {submitState.status === "submitting" &&
-            "Đang gửi lên Google Sheets…"}
+            "Sending to Google Sheets…"}
           {submitState.status === "success" && submitState.message}
           {submitState.status === "error" && submitState.message}
         </Status>

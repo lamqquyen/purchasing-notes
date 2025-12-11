@@ -35,6 +35,89 @@ interface LogSectionProps {
   onDeleteMultiple: () => void;
   onToggleSelection: (id: string, type: EntryType) => void;
   onDeleteEntry: (id: string, type: EntryType) => void;
+  onUpdateStatus?: (id: string, status: 'spent' | 'requested' | 'claimed') => void;
+  onUpdateMultipleStatus?: (status: 'spent' | 'requested' | 'claimed') => void;
+  pendingStatusChanges?: Map<string, { from: 'spent' | 'requested' | 'claimed'; to: 'spent' | 'requested' | 'claimed'; description: string }>;
+  onSubmitStatusChanges?: () => void;
+}
+
+function LogsContent({
+  logs,
+  selectedItems,
+  onSelectAll,
+  onClearSelection,
+  onDeleteMultiple,
+  onToggleSelection,
+  onDeleteEntry,
+  onUpdateStatus,
+  onUpdateMultipleStatus,
+  pendingStatusChanges,
+  onSubmitStatusChanges,
+}: {
+  logs: SheetLogResponse | null;
+  selectedItems: Set<string>;
+  onSelectAll: () => void;
+  onClearSelection: () => void;
+  onDeleteMultiple: () => void;
+  onToggleSelection: (id: string, type: EntryType) => void;
+  onDeleteEntry: (id: string, type: EntryType) => void;
+  onUpdateStatus?: (id: string, status: 'spent' | 'requested' | 'claimed') => void;
+  onUpdateMultipleStatus?: (status: 'spent' | 'requested' | 'claimed') => void;
+  pendingStatusChanges?: Map<string, { from: 'spent' | 'requested' | 'claimed'; to: 'spent' | 'requested' | 'claimed'; description: string }>;
+  onSubmitStatusChanges?: () => void;
+}) {
+  if (!logs) return null;
+
+  return (
+    <>
+      {!!logs.spending?.length && (
+        <SelectionControls
+          selectedCount={selectedItems.size}
+          onSelectAll={onSelectAll}
+          onClearSelection={onClearSelection}
+          onDeleteSelected={onDeleteMultiple}
+          onUpdateStatus={onUpdateMultipleStatus}
+        />
+      )}
+      {pendingStatusChanges && pendingStatusChanges.size > 0 && onSubmitStatusChanges && (
+        <div style={{ marginBottom: "12px", display: "flex", justifyContent: "flex-end" }}>
+          <Button
+            type="button"
+            onClick={onSubmitStatusChanges}
+            style={{ background: "linear-gradient(135deg, #059669, #10b981)", fontSize: "14px", padding: "10px 20px" }}
+          >
+            Submit {pendingStatusChanges.size} Status Change{pendingStatusChanges.size > 1 ? 's' : ''}
+          </Button>
+        </div>
+      )}
+      <LogList>
+        <div>
+          <Row>
+            <strong>Spending:</strong>
+            <strong style={{color: '#213560'}}>Total: {logs.spending?.reduce((acc, item) => acc + item.amount, 0).toLocaleString("vi-VN")} đ</strong>
+          </Row>
+          {!!logs.spending?.length ? (
+            <LogRowContainer>
+              {logs.spending.map((item, idx) => (
+                <LogRow
+                  key={`sp-${item.id || idx}`}
+                  item={item}
+                  entryType="spending"
+                  isSelected={selectedItems.has(`spending:${item.id}`)}
+                  onSelect={() => onToggleSelection(item.id, "spending")}
+                  onDelete={() => onDeleteEntry(item.id, "spending")}
+                  onUpdateStatus={onUpdateStatus ? (id, status) => onUpdateStatus(id, status) : undefined}
+                  pendingStatus={pendingStatusChanges?.get(item.id)?.to}
+                />
+              ))}
+            </LogRowContainer>
+          ) : (
+            <Helper>No spending records.</Helper>
+          )}
+        </div>
+      </LogList>
+    </>
+  );
 }
 
 export function LogSection({
@@ -55,6 +138,10 @@ export function LogSection({
   onDeleteMultiple,
   onToggleSelection,
   onDeleteEntry,
+  onUpdateStatus,
+  onUpdateMultipleStatus,
+  pendingStatusChanges,
+  onSubmitStatusChanges,
 }: LogSectionProps) {
   return (
     <StyledLogSection>
@@ -64,29 +151,29 @@ export function LogSection({
           $active={activeTab === "recent"}
           onClick={() => onTabChange("recent")}
         >
-          Bản ghi gần đây
+          Recent Records
         </Tab>
         <Tab
           type="button"
           $active={activeTab === "filter"}
           onClick={() => onTabChange("filter")}
         >
-          Lọc theo ngày
+          Filter by Date
         </Tab>
       </Tabs>
 
       {activeTab === "recent" && (
         <>
           <LogHeader>
-            <h3 style={{ margin: 0, fontSize: 16, color: "#0f172a" }}>
-              Bản ghi trong 2 ngày qua
+            <h3 style={{ margin: 0, fontSize: 16, color: "#213560" }}>
+              Recent records
             </h3>
             <Button
               type="button"
               onClick={onFetchRecentItems}
               disabled={logState.status === "submitting"}
             >
-              {logState.status === "submitting" ? "Đang tải…" : "Làm mới"}
+              {logState.status === "submitting" ? "Loading…" : "Refresh"}
             </Button>
           </LogHeader>
 
@@ -96,62 +183,19 @@ export function LogSection({
           )}
 
           {recentLogs && logState.status !== "submitting" && (
-            <>
-              {(recentLogs.spending?.length || recentLogs.receiving?.length) && (
-                <SelectionControls
-                  selectedCount={selectedItems.size}
-                  onSelectAll={onSelectAll}
-                  onClearSelection={onClearSelection}
-                  onDeleteSelected={onDeleteMultiple}
-                />
-              )}
-              <LogList>
-                <div>
-                  <Row>
-                    <strong>Chi tiền:</strong>
-                    <strong style={{color: 'red'}}>Tổng chi: {recentLogs.spending?.reduce((acc, item) => acc + item.amount, 0).toLocaleString("vi-VN")}</strong>
-                  </Row>
-                  {recentLogs.spending?.length ? (
-                    <LogRowContainer>
-                      {recentLogs.spending.map((item, idx) => (
-                        <LogRow
-                          key={`sp-${item.id || idx}`}
-                          item={item}
-                          entryType="spending"
-                          isSelected={selectedItems.has(`spending:${item.id}`)}
-                          onSelect={() => onToggleSelection(item.id, "spending")}
-                          onDelete={() => onDeleteEntry(item.id, "spending")}
-                        />
-                      ))}
-                    </LogRowContainer>
-                  ) : (
-                    <Helper>Không có bản ghi chi tiêu.</Helper>
-                  )}
-                </div>
-                <div>
-                  <Row>
-                    <strong>Nhận tiền:</strong>
-                    <strong style={{color: 'green'}}>Tổng nhận: {recentLogs.receiving?.reduce((acc, item) => acc + item.amount, 0).toLocaleString("vi-VN")}</strong>
-                  </Row>
-                  {recentLogs.receiving?.length ? (
-                    <LogRowContainer>
-                      {recentLogs.receiving.map((item, idx) => (
-                        <LogRow
-                          key={`rc-${item.id || idx}`}
-                          item={item}
-                          entryType="receiving"
-                          isSelected={selectedItems.has(`receiving:${item.id}`)}
-                          onSelect={() => onToggleSelection(item.id, "receiving")}
-                          onDelete={() => onDeleteEntry(item.id, "receiving")}
-                        />
-                      ))}
-                    </LogRowContainer>
-                  ) : (
-                    <Helper>Không có bản ghi nhận tiền.</Helper>
-                  )}
-                </div>
-              </LogList>
-            </>
+            <LogsContent
+              logs={recentLogs}
+              selectedItems={selectedItems}
+              onSelectAll={onSelectAll}
+              onClearSelection={onClearSelection}
+              onDeleteMultiple={onDeleteMultiple}
+              onToggleSelection={onToggleSelection}
+              onDeleteEntry={onDeleteEntry}
+              onUpdateStatus={onUpdateStatus}
+              onUpdateMultipleStatus={onUpdateMultipleStatus}
+              pendingStatusChanges={pendingStatusChanges}
+              onSubmitStatusChanges={onSubmitStatusChanges}
+            />
           )}
         </>
       )}
@@ -159,15 +203,15 @@ export function LogSection({
       {activeTab === "filter" && (
         <>
           <LogHeader>
-            <h3 style={{ margin: 0, fontSize: 16, color: "#0f172a" }}>
-              Tra cứu theo ngày
+            <h3 style={{ margin: 0, fontSize: 16, color: "#213560" }}>
+              Filter by Date
             </h3>
             <Input
               type="date"
               value={dateFrom}
               onChange={(e) => onDateFromChange(e.target.value)}
             />
-            <span style={{ color: "#64748b", textAlign: 'center' }}>đến</span>
+            <span style={{ color: "#64748b", textAlign: 'center' }}>to</span>
             <Input
               type="date"
               value={dateTo}
@@ -178,7 +222,7 @@ export function LogSection({
               onClick={onFetchLogs}
               disabled={logState.status === "submitting"}
             >
-              {logState.status === "submitting" ? "Đang tải…" : "Tra cứu"}
+              {logState.status === "submitting" ? "Loading…" : "Filter"}
             </Button>
           </LogHeader>
 
@@ -188,62 +232,19 @@ export function LogSection({
           )}
 
           {logs && logState.status !== "submitting" && (
-            <>
-              {(logs.spending?.length || logs.receiving?.length) && (
-                <SelectionControls
-                  selectedCount={selectedItems.size}
-                  onSelectAll={onSelectAll}
-                  onClearSelection={onClearSelection}
-                  onDeleteSelected={onDeleteMultiple}
-                />
-              )}
-              <LogList>
-                <div>
-                  <Row>
-                    <strong>Chi tiền:</strong>
-                    <strong style={{color: 'red'}}>Tổng chi: {logs.spending?.reduce((acc, item) => acc + item.amount, 0).toLocaleString("vi-VN")}</strong>
-                  </Row>
-                  {logs.spending?.length ? (
-                    <LogRowContainer>
-                      {logs.spending.map((item, idx) => (
-                        <LogRow
-                          key={`sp-${item.id || idx}`}
-                          item={item}
-                          entryType="spending"
-                          isSelected={selectedItems.has(`spending:${item.id}`)}
-                          onSelect={() => onToggleSelection(item.id, "spending")}
-                          onDelete={() => onDeleteEntry(item.id, "spending")}
-                        />
-                      ))}
-                    </LogRowContainer>
-                  ) : (
-                    <Helper>Không có bản ghi chi tiêu.</Helper>
-                  )}
-                </div>
-                <div>
-                  <Row>
-                    <strong>Nhận tiền:</strong>
-                    <strong style={{color: 'green'}}>Tổng nhận: {logs.receiving?.reduce((acc, item) => acc + item.amount, 0).toLocaleString("vi-VN")}</strong>
-                  </Row>
-                  {logs.receiving?.length ? (
-                    <LogRowContainer>
-                      {logs.receiving.map((item, idx) => (
-                        <LogRow
-                          key={`rc-${item.id || idx}`}
-                          item={item}
-                          entryType="receiving"
-                          isSelected={selectedItems.has(`receiving:${item.id}`)}
-                          onSelect={() => onToggleSelection(item.id, "receiving")}
-                          onDelete={() => onDeleteEntry(item.id, "receiving")}
-                        />
-                      ))}
-                    </LogRowContainer>
-                  ) : (
-                    <Helper>Không có bản ghi nhận tiền.</Helper>
-                  )}
-                </div>
-              </LogList>
-            </>
+            <LogsContent
+              logs={logs}
+              selectedItems={selectedItems}
+              onSelectAll={onSelectAll}
+              onClearSelection={onClearSelection}
+              onDeleteMultiple={onDeleteMultiple}
+              onToggleSelection={onToggleSelection}
+              onDeleteEntry={onDeleteEntry}
+              onUpdateStatus={onUpdateStatus}
+              onUpdateMultipleStatus={onUpdateMultipleStatus}
+              pendingStatusChanges={pendingStatusChanges}
+              onSubmitStatusChanges={onSubmitStatusChanges}
+            />
           )}
         </>
       )}

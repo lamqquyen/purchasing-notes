@@ -2,12 +2,15 @@ import { useEffect, useMemo, useState } from "react";
 import { useForm } from "react-hook-form";
 import {
   deleteEntry,
+  updateEntryStatus,
   fetchLogsByDateRange,
   fetchTotal,
+  fetchOverallTotals,
   logEntry,
   type SheetLogResponse,
+  type OverallTotals,
 } from "./services/sheets";
-import type { EntryType, FormValues, SpendingItem, SubmitState } from "./types";
+import type { EntryType, FormValues, SpendingItem, SpendingStatus, SubmitState } from "./types";
 import {
   sortLogsByDateDesc,
   getTodayVNT,
@@ -21,13 +24,18 @@ import {
   Page,
   Card,
   Header,
+  LogoContainer,
   Title,
   Badge,
+  Tabs,
+  Tab,
 } from "./styles";
 import { LoadingOverlay } from "./components/LoadingOverlay";
 import { TotalDisplay } from "./components/TotalDisplay";
 import { TransactionForm } from "./components/TransactionForm";
 import { LogSection } from "./components/LogSection";
+import { StatusUpdateModal } from "./components/StatusUpdateModal";
+import logo from "./logo.svg";
 
 
 function App() {
@@ -36,6 +44,7 @@ function App() {
     status: "idle",
   });
   const [total, setTotal] = useState<number | null>(null);
+  const [overallTotals, setOverallTotals] = useState<OverallTotals | null>(null);
   const defaultDateRange = getDefaultDateRange();
   const [dateFrom, setDateFrom] = useState(defaultDateRange.from);
   const [dateTo, setDateTo] = useState(defaultDateRange.to);
@@ -45,11 +54,15 @@ function App() {
   const [logState, setLogState] = useState<SubmitState>({ status: "idle" });
   const [lastSubmittedDate, setLastSubmittedDate] = useState<string | null>(null);
   const [spendingItems, setSpendingItems] = useState<SpendingItem[]>([
-    { id: "1", description: "", amount: 0, amountError: undefined, descriptionError: undefined }
+    { id: "1", description: "", amount: 0, status: "spent", amountError: undefined, descriptionError: undefined }
   ]);
   const [isInitialLoading, setIsInitialLoading] = useState(true);
   const [isOperationLoading, setIsOperationLoading] = useState(false);
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
+  const [pendingStatusChanges, setPendingStatusChanges] = useState<Map<string, { from: SpendingStatus; to: SpendingStatus; description: string }>>(new Map());
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [mainTab, setMainTab] = useState<"create" | "track">("create");
+  const [totalDisplayRefreshKey, setTotalDisplayRefreshKey] = useState(0);
   const {
     register,
     handleSubmit,
@@ -85,11 +98,13 @@ function App() {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const [totalValue, filteredData] = await Promise.all([
+        const [totalValue, overallTotalsValue, filteredData] = await Promise.all([
           fetchTotal(),
+          fetchOverallTotals(),
           fetchRecentItemsByCreationDate()
         ]);
         setTotal(totalValue);
+        setOverallTotals(overallTotalsValue);
         setRecentLogs(sortLogsByDateDesc(filteredData));
       } catch (error) {
         console.error("Failed to fetch data:", error);
@@ -105,10 +120,10 @@ function App() {
     try {
       const filteredData = await fetchRecentItemsByCreationDate();
       setRecentLogs(sortLogsByDateDesc(filteredData));
-      setLogState({ status: "success", message: "Đã tải dữ liệu." });
+      setLogState({ status: "success", message: "Data loaded." });
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Không thể tải dữ liệu.";
+        error instanceof Error ? error.message : "Failed to load data.";
       setLogState({ status: "error", message });
     }
   };
@@ -120,7 +135,7 @@ function App() {
   }, [submitState.status]);
 
   const addSpendingItem = () => {
-    setSpendingItems([...spendingItems, { id: Date.now().toString(), description: "", amount: 0, amountError: undefined, descriptionError: undefined }]);
+    setSpendingItems([...spendingItems, { id: Date.now().toString(), description: "", amount: 0, status: "spent", amountError: undefined, descriptionError: undefined }]);
   };
 
   const removeSpendingItem = (id: string) => {
@@ -129,7 +144,7 @@ function App() {
     }
   };
 
-  const updateSpendingItem = (id: string, field: "description" | "amount", value: string | number) => {
+  const updateSpendingItem = (id: string, field: "description" | "amount" | "status", value: string | number | SpendingStatus) => {
     setSpendingItems(prevItems => prevItems.map(item => {
       if (item.id === id) {
         // Don't validate on change, only update the value
@@ -157,7 +172,7 @@ function App() {
       setSpendingItems(prevItems => prevItems.map(i => {
         if (i.id === id) {
           if (!numValue || numValue <= 0 || isNaN(numValue)) {
-            return { ...i, amountError: "Giá trị phải lớn hơn 0" };
+            return { ...i, amountError: "Value must be greater than 0" };
           } else {
             return { ...i, amountError: undefined };
           }
@@ -169,21 +184,11 @@ function App() {
 
   const handleTypeChange = (newType: EntryType) => {
     setType(newType);
-    setSpendingItems([{ id: Date.now().toString(), description: "", amount: 0, amountError: undefined, descriptionError: undefined }]);
+    setSpendingItems([{ id: Date.now().toString(), description: "", amount: 0, status: "spent", amountError: undefined, descriptionError: undefined }]);
   };
 
   const onSubmit = handleSubmit(async (data) => {
-    // For receiving type, ensure validation is triggered
-    if (type === "receiving") {
-      // Trigger validation for all fields
-      const isValid = await trigger();
-      if (!isValid) {
-        // Validation failed, errors will be shown by react-hook-form
-        return;
-      }
-    }
-    
-    // Convert date from dd/MM/yyyy to yyyy-MM-dd for API (needed for both types)
+    // Convert date from dd/MM/yyyy to yyyy-MM-dd for API
     const dateForAPI = convertDDMMYYYYToYYYYMMDD(data.occurredAt);
     const currentDate = data.occurredAt;
     
@@ -200,7 +205,7 @@ function App() {
           updated.descriptionError = undefined;
         }
         if (!item.amount || item.amount <= 0) {
-          updated.amountError = "Giá trị phải lớn hơn 0";
+          updated.amountError = "Value must be greater than 0";
           hasErrors = true;
         } else {
           updated.amountError = undefined;
@@ -212,13 +217,13 @@ function App() {
       setSpendingItems(updatedItems);
       
       if (hasErrors) {
-        setSubmitState({ status: "error", message: "Vui lòng kiểm tra lại các trường đã nhập." });
+        setSubmitState({ status: "error", message: "Please check the entered fields." });
         return;
       }
       
       const validItems = spendingItems.filter(item => item.description.trim() && item.amount > 0);
       if (validItems.length === 0) {
-        setSubmitState({ status: "error", message: "Vui lòng nhập ít nhất một mục chi tiêu hợp lệ." });
+        setSubmitState({ status: "error", message: "Please enter at least one valid spending item." });
         return;
       }
       
@@ -234,18 +239,15 @@ function App() {
             occurredAt: dateForAPI,
             amount: item.amount,
             description: item.description,
+            status: item.status,
           })
         )
       )
         .then(async () => {
-          // Refresh both recentLogs and total
+          // Refresh both recentLogs and totals (always refresh recent after submission)
           try {
-            const [recentData, totalValue] = await Promise.all([
-              fetchRecentItemsByCreationDate(),
-              fetchTotal()
-            ]);
-            setRecentLogs(sortLogsByDateDesc(recentData));
-            setTotal(totalValue);
+            await refreshData(true);
+            setTotalDisplayRefreshKey(prev => prev + 1); // Trigger TotalDisplay refresh
           } catch (e) {
             console.error("Failed to refresh data:", e);
           } finally {
@@ -254,70 +256,21 @@ function App() {
           
           setSubmitState({
             status: "success",
-            message: `Lưu thành công ${validItems.length} mục!`,
+            message: `Successfully saved ${validItems.length} item(s)!`,
           });
           
           // Keep the date for "add more" functionality
           setLastSubmittedDate(currentDate);
           
           // Reset form
-          setSpendingItems([{ id: Date.now().toString(), description: "", amount: 0, amountError: undefined, descriptionError: undefined }]);
+          setSpendingItems([{ id: Date.now().toString(), description: "", amount: 0, status: "spent", amountError: undefined, descriptionError: undefined }]);
           
-          // Switch to recent tab
+          // Switch to track tab and recent sub-tab
+          setMainTab("track");
           setActiveTab("recent");
         })
         .catch((error) => {
-          const message = error instanceof Error ? error.message : "Hiện chưa thể ghi giao dịch.";
-          setSubmitState({ status: "error", message });
-          setIsOperationLoading(false);
-        });
-    } else {
-      // Receiving item - react-hook-form already validated via handleSubmit
-      setSubmitState({ status: "submitting" });
-      setIsOperationLoading(true);
-      
-      // Call API
-      logEntry({
-        ...data,
-        occurredAt: dateForAPI,
-        type,
-      })
-        .then(async () => {
-          // Refresh both recentLogs and total
-          try {
-            const [recentData, totalValue] = await Promise.all([
-              fetchRecentItemsByCreationDate(),
-              fetchTotal()
-            ]);
-            setRecentLogs(sortLogsByDateDesc(recentData));
-            setTotal(totalValue);
-          } catch (e) {
-            console.error("Failed to refresh data:", e);
-          } finally {
-            setIsOperationLoading(false);
-          }
-          
-          setSubmitState({
-            status: "success",
-            message: `Lưu thành công 1 mục!`,
-          });
-          
-          // Keep the date for "add more" functionality
-          setLastSubmittedDate(currentDate);
-          
-          // Reset form
-          reset({
-            amount: 0,
-            description: "",
-            occurredAt: currentDate,
-          });
-          resetField("amount", { defaultValue: 0 });
-          
-          // Switch to recent tab
-          setActiveTab("recent");
-        })
-        .catch((error) => {
-          const message = error instanceof Error ? error.message : "Hiện chưa thể ghi giao dịch.";
+          const message = error instanceof Error ? error.message : "Unable to log transaction at this time.";
           setSubmitState({ status: "error", message });
           setIsOperationLoading(false);
         });
@@ -326,21 +279,21 @@ function App() {
 
   const onFetchLogs = async () => {
     if (!dateFrom || !dateTo) {
-      setLogState({ status: "error", message: "Chọn khoảng ngày cần tra cứu." });
+      setLogState({ status: "error", message: "Please select a date range to search." });
       return;
     }
     if (dateFrom > dateTo) {
-      setLogState({ status: "error", message: "Ngày bắt đầu phải nhỏ hơn hoặc bằng ngày kết thúc." });
+      setLogState({ status: "error", message: "Start date must be less than or equal to end date." });
       return;
     }
     setLogState({ status: "submitting" });
     try {
       const data = await fetchLogsByDateRange(dateFrom, dateTo);
       setLogs(sortLogsByDateDesc(data));
-      setLogState({ status: "success", message: "Đã tải dữ liệu." });
+      setLogState({ status: "success", message: "Data loaded." });
     } catch (error) {
       const message =
-        error instanceof Error ? error.message : "Không thể tải dữ liệu.";
+        error instanceof Error ? error.message : "Failed to load data.";
       setLogState({ status: "error", message });
     }
   };
@@ -362,10 +315,8 @@ function App() {
     const allItems = new Set<string>();
     if (activeTab === "recent" && recentLogs) {
       recentLogs.spending?.forEach(item => allItems.add(`spending:${item.id}`));
-      recentLogs.receiving?.forEach(item => allItems.add(`receiving:${item.id}`));
     } else if (activeTab === "filter" && logs) {
       logs.spending?.forEach(item => allItems.add(`spending:${item.id}`));
-      logs.receiving?.forEach(item => allItems.add(`receiving:${item.id}`));
     }
     setSelectedItems(allItems);
   };
@@ -374,9 +325,32 @@ function App() {
     setSelectedItems(new Set());
   };
 
+  // Helper function to refresh data after operations
+  const refreshData = async (forceRecent?: boolean) => {
+    const promises: Promise<any>[] = [fetchTotal(), fetchOverallTotals()];
+    
+    if (forceRecent || activeTab === "recent") {
+      promises.push(fetchRecentItemsByCreationDate());
+    } else if (activeTab === "filter" && dateFrom && dateTo) {
+      promises.push(fetchLogsByDateRange(dateFrom, dateTo));
+    }
+    
+    const results = await Promise.all(promises);
+    setTotal(results[0]);
+    setOverallTotals(results[1]);
+    
+    if (forceRecent || activeTab === "recent") {
+      if (results[2]) {
+        setRecentLogs(sortLogsByDateDesc(results[2]));
+      }
+    } else if (activeTab === "filter" && results[2]) {
+      setLogs(sortLogsByDateDesc(results[2]));
+    }
+  };
+
   const onDeleteMultipleEntries = async () => {
     if (selectedItems.size === 0) return;
-    if (!confirm(`Bạn có chắc muốn xóa ${selectedItems.size} bản ghi đã chọn?`)) return;
+    if (!confirm(`Are you sure you want to delete ${selectedItems.size} selected record(s)?`)) return;
 
     // Parse selected items into {id, type} pairs
     const itemsToDelete: Array<{ id: string; type: EntryType }> = [];
@@ -395,24 +369,9 @@ function App() {
     // Call backend
     Promise.all(itemsToDelete.map(({ id, type }) => deleteEntry(id, type)))
       .then(async () => {
-        // Refresh both recentLogs and total, and filter tab logs if needed
         try {
-          const promises: Promise<any>[] = [fetchTotal()];
-          
-          if (activeTab === "recent") {
-            promises.push(fetchRecentItemsByCreationDate());
-          } else if (activeTab === "filter" && dateFrom && dateTo) {
-            promises.push(fetchLogsByDateRange(dateFrom, dateTo));
-          }
-          
-          const results = await Promise.all(promises);
-          setTotal(results[0]);
-          
-          if (activeTab === "recent" && results[1]) {
-            setRecentLogs(sortLogsByDateDesc(results[1]));
-          } else if (activeTab === "filter" && results[1]) {
-            setLogs(sortLogsByDateDesc(results[1]));
-          }
+          await refreshData();
+          setTotalDisplayRefreshKey(prev => prev + 1); // Trigger TotalDisplay refresh
         } catch (e) {
           console.error("Failed to refresh data:", e);
         } finally {
@@ -421,14 +380,14 @@ function App() {
       })
       .catch((error) => {
         const message =
-          error instanceof Error ? error.message : "Không thể xóa bản ghi trên server.";
+          error instanceof Error ? error.message : "Failed to delete record on server.";
         setLogState({ status: "error", message });
         setIsOperationLoading(false);
       });
   };
 
   const onDeleteEntry = async (id: string, entryType: EntryType) => {
-    if (!confirm("Bạn có chắc muốn xóa bản ghi này?")) return;
+    if (!confirm("Are you sure you want to delete this record?")) return;
     
     // Show loading overlay
     setIsOperationLoading(true);
@@ -436,24 +395,9 @@ function App() {
     // Call backend
     deleteEntry(id, entryType)
       .then(async () => {
-        // Refresh both recentLogs and total, and filter tab logs if needed
         try {
-          const promises: Promise<any>[] = [fetchTotal()];
-          
-          if (activeTab === "recent") {
-            promises.push(fetchRecentItemsByCreationDate());
-          } else if (activeTab === "filter" && dateFrom && dateTo) {
-            promises.push(fetchLogsByDateRange(dateFrom, dateTo));
-          }
-          
-          const results = await Promise.all(promises);
-          setTotal(results[0]);
-          
-          if (activeTab === "recent" && results[1]) {
-            setRecentLogs(sortLogsByDateDesc(results[1]));
-          } else if (activeTab === "filter" && results[1]) {
-            setLogs(sortLogsByDateDesc(results[1]));
-          }
+          await refreshData();
+          setTotalDisplayRefreshKey(prev => prev + 1); // Trigger TotalDisplay refresh
         } catch (e) {
           console.error("Failed to refresh data:", e);
         } finally {
@@ -462,7 +406,125 @@ function App() {
       })
       .catch((error) => {
         const message =
-          error instanceof Error ? error.message : "Không thể xóa bản ghi trên server.";
+          error instanceof Error ? error.message : "Failed to delete record on server.";
+        setLogState({ status: "error", message });
+        setIsOperationLoading(false);
+      });
+  };
+
+  const onStatusChange = (id: string, newStatus: SpendingStatus) => {
+    // Find the current item to get its current status and description
+    const currentLogs = activeTab === "recent" ? recentLogs : logs;
+    const item = currentLogs?.spending?.find(i => i.id === id);
+    
+    if (!item) return;
+    
+    const currentStatus = (item.status || "spent") as SpendingStatus;
+    
+    // If changing to the same status, remove from pending changes
+    if (currentStatus === newStatus) {
+      setPendingStatusChanges(prev => {
+        const next = new Map(prev);
+        next.delete(id);
+        return next;
+      });
+      return;
+    }
+    
+    // Add to pending changes
+    setPendingStatusChanges(prev => {
+      const next = new Map(prev);
+      // If already in pending, use the original 'from' status, otherwise use current
+      const fromStatus = next.has(id) ? next.get(id)!.from : currentStatus;
+      next.set(id, {
+        from: fromStatus,
+        to: newStatus,
+        description: item.description || "—"
+      });
+      return next;
+    });
+  };
+
+  const onSubmitStatusChanges = () => {
+    if (pendingStatusChanges.size === 0) return;
+    setShowStatusModal(true);
+  };
+
+  const onConfirmStatusChanges = async () => {
+    setShowStatusModal(false);
+    
+    if (pendingStatusChanges.size === 0) return;
+    
+    // Show loading overlay
+    setIsOperationLoading(true);
+    
+    // Convert pending changes to array
+    const changes = Array.from(pendingStatusChanges.entries()).map(([id, change]) => ({
+      id,
+      status: change.to
+    }));
+    
+    // Call backend for all items
+    Promise.all(changes.map(({ id, status }) => updateEntryStatus(id, "spending", status)))
+      .then(async () => {
+        // Clear pending changes
+        setPendingStatusChanges(new Map());
+        
+        try {
+          await refreshData();
+        } catch (e) {
+          console.error("Failed to refresh data:", e);
+        } finally {
+          setIsOperationLoading(false);
+        }
+      })
+      .catch((error) => {
+        const message =
+          error instanceof Error ? error.message : "Failed to update status on server.";
+        setLogState({ status: "error", message });
+        setIsOperationLoading(false);
+      });
+  };
+
+  const onCancelStatusChanges = () => {
+    setShowStatusModal(false);
+    // Optionally clear pending changes on cancel
+    // setPendingStatusChanges(new Map());
+  };
+
+  const onUpdateMultipleStatus = async (status: SpendingStatus) => {
+    if (selectedItems.size === 0) return;
+    if (!confirm(`Are you sure you want to update ${selectedItems.size} selected record(s) to "${status}"?`)) return;
+
+    // Parse selected items into {id, type} pairs
+    const itemsToUpdate: Array<{ id: string; type: EntryType }> = [];
+
+    selectedItems.forEach(key => {
+      const [type, id] = key.split(':') as [EntryType, string];
+      itemsToUpdate.push({ id, type });
+    });
+
+    // Clear selection
+    setSelectedItems(new Set());
+
+    // Show loading overlay
+    setIsOperationLoading(true);
+
+    // Call backend for all items
+    Promise.all(itemsToUpdate.map(({ id, type }) => updateEntryStatus(id, type, status)))
+      .then(async () => {
+        try {
+          await refreshData();
+          setTotalDisplayRefreshKey(prev => prev + 1); // Trigger TotalDisplay refresh
+        } catch (e) {
+          console.error("Failed to refresh data:", e);
+        } finally {
+          setIsOperationLoading(false);
+        }
+      })
+      .catch((error) => {
+        const message =
+          error instanceof Error ? error.message : "Failed to update status on server.";
         setLogState({ status: "error", message });
         setIsOperationLoading(false);
       });
@@ -477,59 +539,102 @@ function App() {
         <Page>
           <Card>
           <Header>
-            <Title>
-              <h1>Sổ Ghi Tiền</h1>
-            </Title>
-            <Badge>Quản Lý Chi Tiêu</Badge>
+            <LogoContainer>
+              <img style={{ scale: '75%' }} src={'hex.png'} alt="HexTrust" />
+              <Title>
+                <h1>Payment Tracking</h1>
+              </Title>
+            </LogoContainer>
+            <Badge>Expense Management</Badge>
           </Header>
 
-          <TotalDisplay total={total} />
+          <Tabs style={{ marginTop: "24px" }} $activeIndex={mainTab === "create" ? 0 : 1}>
+            <Tab
+              type="button"
+              $active={mainTab === "create"}
+              onClick={() => setMainTab("create")}
+            >
+              Create Payment
+            </Tab>
+            <Tab
+              type="button"
+              $active={mainTab === "track"}
+              onClick={() => setMainTab("track")}
+            >
+              Track Payment
+            </Tab>
+          </Tabs>
 
-          <TransactionForm
-            type={type}
-            spendingItems={spendingItems}
-            submitState={submitState}
-            statusTone={statusTone}
-            register={register}
-            control={control}
-            errors={errors}
-            amountValue={amountValue}
-            trigger={trigger}
-            onTypeChange={handleTypeChange}
-            onSpendingItemChange={updateSpendingItem}
-            onSpendingItemBlur={handleSpendingItemBlur}
-            onAddSpendingItem={addSpendingItem}
-            onRemoveSpendingItem={removeSpendingItem}
-            onSubmit={onSubmit}
-          />
+          {mainTab === "create" && (
+            <TransactionForm
+              type={type}
+              spendingItems={spendingItems}
+              submitState={submitState}
+              statusTone={statusTone}
+              register={register}
+              control={control}
+              errors={errors}
+              amountValue={amountValue}
+              trigger={trigger}
+              onTypeChange={handleTypeChange}
+              onSpendingItemChange={updateSpendingItem}
+              onSpendingItemBlur={handleSpendingItemBlur}
+              onAddSpendingItem={addSpendingItem}
+              onRemoveSpendingItem={removeSpendingItem}
+              onSubmit={onSubmit}
+            />
+          )}
 
-          <LogSection
-            activeTab={activeTab}
-            recentLogs={recentLogs}
-            logs={logs}
-            logState={logState}
-            selectedItems={selectedItems}
-            dateFrom={dateFrom}
-            dateTo={dateTo}
-            onTabChange={(tab) => {
-              setActiveTab(tab);
-              setSelectedItems(new Set());
-              if (tab === "recent" && !recentLogs) {
-                onFetchRecentItems();
-              }
-            }}
-            onFetchRecentItems={onFetchRecentItems}
-            onFetchLogs={onFetchLogs}
-            onDateFromChange={setDateFrom}
-            onDateToChange={setDateTo}
-            onSelectAll={selectAllItems}
-            onClearSelection={clearSelection}
-            onDeleteMultiple={onDeleteMultipleEntries}
-            onToggleSelection={toggleItemSelection}
-            onDeleteEntry={onDeleteEntry}
-          />
+          {mainTab === "track" && (
+            <>
+              <TotalDisplay refreshKey={totalDisplayRefreshKey} />
+
+              <LogSection
+                activeTab={activeTab}
+                recentLogs={recentLogs}
+                logs={logs}
+                logState={logState}
+                selectedItems={selectedItems}
+                dateFrom={dateFrom}
+                dateTo={dateTo}
+                onTabChange={(tab) => {
+                  setActiveTab(tab);
+                  setSelectedItems(new Set());
+                  setPendingStatusChanges(new Map()); // Clear pending changes when switching tabs
+                  if (tab === "recent" && !recentLogs) {
+                    onFetchRecentItems();
+                  }
+                }}
+                onFetchRecentItems={onFetchRecentItems}
+                onFetchLogs={onFetchLogs}
+                onDateFromChange={setDateFrom}
+                onDateToChange={setDateTo}
+                onSelectAll={selectAllItems}
+                onClearSelection={clearSelection}
+                onDeleteMultiple={onDeleteMultipleEntries}
+                onToggleSelection={toggleItemSelection}
+                onDeleteEntry={onDeleteEntry}
+                onUpdateStatus={onStatusChange}
+                onUpdateMultipleStatus={onUpdateMultipleStatus}
+                pendingStatusChanges={pendingStatusChanges}
+                onSubmitStatusChanges={onSubmitStatusChanges}
+              />
+            </>
+          )}
           </Card>
         </Page>
+      )}
+      {showStatusModal && (
+        <StatusUpdateModal
+          changes={Array.from(pendingStatusChanges.entries()).map(([id, change]) => ({
+            id,
+            description: change.description,
+            from: change.from,
+            to: change.to,
+          }))}
+          onConfirm={onConfirmStatusChanges}
+          onCancel={onCancelStatusChanges}
+        />
       )}
     </>
   );

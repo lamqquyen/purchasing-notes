@@ -1,25 +1,27 @@
-import { SelectionControls as StyledSelectionControls, SelectionActions, Button, DeleteButton } from "../styles";
+import { SelectionControls as StyledSelectionControls, SelectionActions, Button, DeleteButton, SelectRow, SelectButton } from "../styles";
+import type { SpendingStatus } from "../types";
 
 interface SelectionControlsProps {
   selectedCount: number;
   onSelectAll: () => void;
   onClearSelection: () => void;
   onDeleteSelected: () => void;
+  onUpdateStatus?: (status: SpendingStatus) => void;
 }
 
-export function SelectionControls({ selectedCount, onSelectAll, onClearSelection, onDeleteSelected }: SelectionControlsProps) {
+export function SelectionControls({ selectedCount, onSelectAll, onClearSelection, onDeleteSelected, onUpdateStatus }: SelectionControlsProps) {
   return (
     <StyledSelectionControls>
       <span style={{ fontSize: 14, color: "#64748b" }}>
-        {selectedCount > 0 ? `Đã chọn ${selectedCount} mục` : "Chọn nhiều mục để xóa"}
+        {selectedCount > 0 ? `${selectedCount} item(s) selected` : "Select multiple items to update or delete"}
       </span>
       <SelectionActions>
         <Button
           type="button"
           onClick={onSelectAll}
-          style={{ background: "#e0e7ff", color: "#4338ca", fontSize: 12, padding: "6px 12px", flex: 1 }}
+          style={{ background: "rgba(33, 53, 96, 0.1)", color: "#213560", fontSize: 12, padding: "6px 12px", flex: 1 }}
         >
-          Chọn tất cả
+          Select All
         </Button>
         {selectedCount > 0 && (
           <>
@@ -28,14 +30,14 @@ export function SelectionControls({ selectedCount, onSelectAll, onClearSelection
               onClick={onClearSelection}
               style={{ background: "#f1f5f9", color: "#64748b", fontSize: 12, padding: "6px 12px", flex: 1 }}
             >
-              Bỏ chọn
+              Clear
             </Button>
             <DeleteButton
               type="button"
               onClick={onDeleteSelected}
               style={{ flex: 1 }}
             >
-              Xóa {selectedCount} mục
+              Delete {selectedCount} item(s)
             </DeleteButton>
           </>
         )}

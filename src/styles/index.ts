@@ -12,7 +12,8 @@ export const GlobalStyle = createGlobalStyle`
   body {
     margin: 0;
     font-family: 'Inter', system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-    background: radial-gradient(circle at 20% 20%, #f7faff, #eef2ff 45%, #e6ecff);
+    background: linear-gradient(135deg, #213560 0%, #1e3a8a 50%, #1e40af 100%);
+    background-attachment: fixed;
     color: #0f172a;
     min-height: 100vh;
   }
@@ -29,10 +30,10 @@ export const Page = styled.main`
 export const Card = styled.section`
   width: min(960px, 100%);
   background: #ffffff;
-  border: 1px solid #e2e8f0;
+  border: 1px solid rgba(33, 53, 96, 0.2);
   border-radius: 20px;
-  box-shadow: 0 20px 80px rgba(15, 23, 42, 0.1),
-    0 4px 20px rgba(15, 23, 42, 0.04);
+  box-shadow: 0 4px 12px -2px rgba(33, 53, 96, 0.12),
+    0 2px 6px -2px rgba(33, 53, 96, 0.08);
   padding: 32px;
   display: grid;
   gap: 24px;
@@ -50,6 +51,18 @@ export const Header = styled.header`
   flex-wrap: wrap;
 `;
 
+export const LogoContainer = styled.div`
+  display: flex;
+  align-items: center;
+  gap: 8px;
+
+  img {
+    height: 40px;
+    width: auto;
+    display: block;
+  }
+`;
+
 export const Title = styled.div`
   display: grid;
   gap: 6px;
@@ -57,7 +70,8 @@ export const Title = styled.div`
   h1 {
     margin: 0;
     font-size: clamp(24px, 3vw, 30px);
-    color: #0f172a;
+    color: #213560;
+    font-weight: 700;
   }
 
   p {
@@ -73,10 +87,11 @@ export const Badge = styled.span`
   gap: 8px;
   padding: 8px 12px;
   border-radius: 999px;
-  background: #eef2ff;
-  color: #4338ca;
+  background: rgba(33, 53, 96, 0.1);
+  color: #213560;
   font-weight: 600;
   font-size: 14px;
+  border: 1px solid rgba(33, 53, 96, 0.2);
 `;
 
 export const Form = styled.form`
@@ -100,7 +115,7 @@ export const Field = styled.label`
 export const Input = styled.input`
   padding: 12px 14px;
   border-radius: 10px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid rgba(33, 53, 96, 0.2);
   background: #f8fafc;
   color: #0f172a;
   font-size: 15px;
@@ -108,8 +123,8 @@ export const Input = styled.input`
 
   &:focus {
     outline: none;
-    border-color: #6366f1;
-    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+    border-color: #213560;
+    box-shadow: 0 0 0 3px rgba(33, 53, 96, 0.15);
   }
 `;
 
@@ -117,16 +132,16 @@ export const SelectRow = styled.div`
   display: inline-flex;
   padding: 4px;
   border-radius: 12px;
-  background: #f1f5f9;
-  border: 1px solid #e2e8f0;
+  background: rgba(33, 53, 96, 0.05);
+  border: 1px solid rgba(33, 53, 96, 0.2);
   gap: 6px;
   width: fit-content;
 `;
 
 export const SelectButton = styled.button<{ $active: boolean }>`
   border: 0;
-  background: ${({ $active }) => ($active ? "#111827" : "transparent")};
-  color: ${({ $active }) => ($active ? "#ffffff" : "#0f172a")};
+  background: ${({ $active }) => ($active ? "#213560" : "transparent")};
+  color: ${({ $active }) => ($active ? "#ffffff" : "#213560")};
   padding: 10px 14px;
   border-radius: 10px;
   font-weight: 600;
@@ -134,7 +149,7 @@ export const SelectButton = styled.button<{ $active: boolean }>`
   transition: all 0.2s ease;
 
   &:hover {
-    background: ${({ $active }) => ($active ? "#111827" : "#e5e7eb")};
+    background: ${({ $active }) => ($active ? "#1e3a8a" : "rgba(33, 53, 96, 0.1)")};
   }
 `;
 
@@ -152,18 +167,20 @@ export const Button = styled.button`
   font-weight: 700;
   font-size: 15px;
   cursor: pointer;
-  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  background: linear-gradient(135deg, #213560, #1e3a8a);
   color: #ffffff;
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   width: 100%;
+  box-shadow: 0 2px 6px -1px rgba(33, 53, 96, 0.25);
   
   &:hover {
     transform: translateY(-1px);
-    opacity: 0.7;
+    background: linear-gradient(135deg, #1e3a8a, #1e40af);
+    box-shadow: 0 3px 8px -1px rgba(33, 53, 96, 0.3);
   }
 
   &:disabled {
-    opacity: 0.7;
+    opacity: 0.6;
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
@@ -209,8 +226,8 @@ export const LogSection = styled.section`
   gap: 12px;
   padding: 16px;
   border-radius: 14px;
-  border: 1px solid #e2e8f0;
-  background: #f8fafc;
+  border: 1px solid rgba(33, 53, 96, 0.2);
+  background: rgba(248, 250, 252, 0.8);
 `;
 
 export const LogHeader = styled.div`
@@ -225,27 +242,46 @@ export const LogHeader = styled.div`
   }
 `;
 
-export const Tabs = styled.div`
+export const Tabs = styled.div<{ $activeIndex?: number }>`
   display: flex;
-  gap: 8px;
-  border-bottom: 2px solid #e2e8f0;
+  gap: 0;
+  border-bottom: 2px solid rgba(33, 53, 96, 0.2);
   margin-bottom: 16px;
+  width: 100%;
+  position: relative;
+  
+  &::after {
+    content: '';
+    position: absolute;
+    bottom: -2px;
+    left: ${({ $activeIndex = 0 }) => `${$activeIndex * 50}%`};
+    width: 50%;
+    height: 3px;
+    background: #213560;
+    transform-origin: center;
+    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    border-radius: 2px 2px 0 0;
+    z-index: 2;
+  }
 `;
 
 export const Tab = styled.button<{ $active: boolean }>`
   border: 0;
   background: transparent;
-  color: ${({ $active }) => ($active ? "#6366f1" : "#64748b")};
+  color: ${({ $active }) => ($active ? "#213560" : "#64748b")};
   padding: 12px 16px;
   font-weight: ${({ $active }) => ($active ? "600" : "500")};
   font-size: 14px;
   cursor: pointer;
-  border-bottom: 2px solid ${({ $active }) => ($active ? "#6366f1" : "transparent")};
-  margin-bottom: -2px;
-  transition: all 0.2s ease;
+  position: relative;
+  transition: color 0.3s cubic-bezier(0.4, 0, 0.2, 1), font-weight 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  flex: 1;
+  text-align: center;
+  z-index: 1;
 
   &:hover {
-    color: ${({ $active }) => ($active ? "#6366f1" : "#475569")};
+    color: #213560;
+    transition: color 0.2s ease;
   }
 `;
 
@@ -262,9 +298,15 @@ export const LogRow = styled.div`
   padding: 10px 12px;
   border-radius: 10px;
   background: #ffffff;
-  border: 1px solid #e2e8f0;
+  border: 1px solid rgba(33, 53, 96, 0.15);
   font-size: 14px;
   color: #0f172a;
+  transition: all 0.2s ease;
+
+  &:hover {
+    border-color: rgba(33, 53, 96, 0.3);
+    box-shadow: 0 1px 4px -1px rgba(33, 53, 96, 0.1);
+  }
 `;
 
 export const DeleteButton = styled.button`
@@ -310,7 +352,7 @@ export const Checkbox = styled.input`
   width: 18px;
   height: 18px;
   cursor: pointer;
-  accent-color: #6366f1;
+  accent-color: #213560;
 `;
 
 export const SelectionControls = styled.div`
@@ -319,10 +361,10 @@ export const SelectionControls = styled.div`
   align-items: center;
   gap: 12px;
   padding: 12px;
-  background: #f8fafc;
+  background: rgba(248, 250, 252, 0.8);
   border-radius: 10px;
   margin-bottom: 12px;
-  border: 1px solid #e2e8f0;
+  border: 1px solid rgba(33, 53, 96, 0.2);
 
   @media (max-width: 768px) {
     flex-direction: column;
@@ -347,8 +389,8 @@ export const ItemRow = styled.div`
   align-items: start;
   padding: 12px;
   border-radius: 10px;
-  background: #f8fafc;
-  border: 1px solid #e2e8f0;
+  background: rgba(248, 250, 252, 0.8);
+  border: 1px solid rgba(33, 53, 96, 0.2);
 `;
 
 export const LogRowContainer = styled.div`
@@ -368,22 +410,50 @@ export const Row = styled.div`
 export const TotalDisplay = styled.div`
   padding: 20px;
   border-radius: 14px;
-  background: linear-gradient(135deg, #6366f1, #4f46e5);
+  background: linear-gradient(135deg, #213560, #1e3a8a, #1e40af);
   color: #ffffff;
   text-align: center;
   margin-bottom: 24px;
+  box-shadow: 0 3px 10px -2px rgba(33, 53, 96, 0.25);
   
   h2 {
     margin: 0 0 8px 0;
     font-size: 14px;
     font-weight: 600;
+    opacity: 0.95;
+    letter-spacing: 0.5px;
+  }
+  
+  h3 {
+    margin: 0 0 8px 0;
+    font-size: 12px;
+    font-weight: 600;
     opacity: 0.9;
+    letter-spacing: 0.5px;
   }
   
   .amount {
-    font-size: 32px;
+    font-size: 24px;
     font-weight: 700;
     margin: 0;
+    text-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+  
+  @media (max-width: 768px) {
+    padding: 16px;
+    
+    .amount {
+      font-size: 18px;
+    }
+    
+    h3 {
+      font-size: 11px;
+    }
+    
+    .totals-grid {
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
   }
 `;
 
@@ -403,8 +473,8 @@ export const LoadingOverlay = styled.div`
 export const Spinner = styled.div`
   width: 48px;
   height: 48px;
-  border: 4px solid #e2e8f0;
-  border-top-color: #6366f1;
+  border: 4px solid rgba(33, 53, 96, 0.2);
+  border-top-color: #213560;
   border-radius: 50%;
   animation: spin 0.8s linear infinite;
 

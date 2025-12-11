@@ -1,6 +1,9 @@
 import type { SheetLogResponse } from "../services/sheets";
 
-export const requiredMessage = "Trường này là bắt buộc";
+export const requiredMessage = "This field is required";
+
+// Re-export status utilities
+export { getStatusColor, getStatusLabel } from "./status";
 
 export function formatNumberWithPeriods(value: number | string): string {
   if (value === "" || value === null || value === undefined) return "";
@@ -49,25 +52,6 @@ export function sortLogsByDateDesc(logs: SheetLogResponse): SheetLogResponse {
       return dateDiff;
     });
     sorted.spending = spendingWithIndex.map(({ item }) => item);
-  }
-  
-  if (sorted.receiving) {
-    // Create array with original index to preserve creation order
-    const receivingWithIndex = sorted.receiving.map((item, index) => ({ item, originalIndex: index }));
-    receivingWithIndex.sort((a, b) => {
-      const dateA = parseDate(a.item.date);
-      const dateB = parseDate(b.item.date);
-      const dateDiff = dateB.getTime() - dateA.getTime(); // Descending (newest first)
-      
-      // If dates are the same, preserve original order (newer items appear first in original array)
-      // Since backend returns newest first, we reverse the original index comparison
-      if (dateDiff === 0) {
-        return b.originalIndex - a.originalIndex; // Items that appeared later in original array come first
-      }
-      
-      return dateDiff;
-    });
-    sorted.receiving = receivingWithIndex.map(({ item }) => item);
   }
   
   return sorted;

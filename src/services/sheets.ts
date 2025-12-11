@@ -1,8 +1,9 @@
 export type SheetEntry = {
-  type: 'spending' | 'receiving';
+  type: 'spending';
   occurredAt: string;
   amount: number;
   description: string;
+  status: 'spent' | 'requested' | 'claimed';
 };
 
 export type SheetLogItem = {
@@ -10,19 +11,42 @@ export type SheetLogItem = {
   date: string;
   amount: number;
   description?: string;
+  status?: 'spent' | 'requested' | 'claimed';
 };
 
 export type SheetLogResponse = {
   total?: number;
   spending?: SheetLogItem[];
-  receiving?: SheetLogItem[];
 };
 
 const endpoint = import.meta.env.VITE_SHEET_WEBAPP_URL;
 
+// Helper function to handle API responses
+async function handleApiResponse(response: Response, defaultError: string): Promise<any> {
+  const contentType = response.headers.get('content-type');
+  const isJson = contentType && contentType.includes('application/json');
+
+  if (!response.ok) {
+    const message = isJson 
+      ? (await response.json().catch(() => ({}))).error || defaultError
+      : await response.text().catch(() => defaultError);
+    throw new Error(message);
+  }
+
+  if (!isJson) {
+    const text = await response.text();
+    if (text.includes('<html>') || text.includes('<!DOCTYPE')) {
+      throw new Error('Apps Script returned HTML error. Check script and deployment.');
+    }
+    return {};
+  }
+
+  return response.json().catch(() => ({}));
+}
+
 export async function logEntry(entry: SheetEntry) {
   if (!endpoint) {
-    throw new Error('Thiếu URL webhook Google Sheet (VITE_SHEET_WEBAPP_URL).');
+    throw new Error('Missing Google Sheet webhook URL (VITE_SHEET_WEBAPP_URL).');
   }
 
   const response = await fetch(endpoint, {
@@ -33,30 +57,12 @@ export async function logEntry(entry: SheetEntry) {
     body: JSON.stringify(entry)
   });
 
-  const contentType = response.headers.get('content-type');
-  const isJson = contentType && contentType.includes('application/json');
-
-  if (!response.ok) {
-    const message = isJson 
-      ? (await response.json().catch(() => ({}))).error || 'Ghi nhận giao dịch không thành công.'
-      : await response.text().catch(() => 'Ghi nhận giao dịch không thành công.');
-    throw new Error(message);
-  }
-
-  if (!isJson) {
-    const text = await response.text();
-    if (text.includes('<html>') || text.includes('<!DOCTYPE')) {
-      throw new Error('Apps Script trả về lỗi HTML. Kiểm tra lại script và deployment.');
-    }
-    return {};
-  }
-
-  return response.json().catch(() => ({}));
+  return handleApiResponse(response, 'Failed to log transaction.');
 }
 
 export async function deleteEntry(id: string, type: SheetEntry['type']) {
   if (!endpoint) {
-    throw new Error('Thiếu URL webhook Google Sheet (VITE_SHEET_WEBAPP_URL).');
+    throw new Error('Missing Google Sheet webhook URL (VITE_SHEET_WEBAPP_URL).');
   }
 
   const response = await fetch(endpoint, {
@@ -67,30 +73,51 @@ export async function deleteEntry(id: string, type: SheetEntry['type']) {
     body: JSON.stringify({ action: 'delete', id, type })
   });
 
+  return handleApiResponse(response, 'Failed to delete entry.');
+}
+
+export async function updateEntryStatus(id: string, type: SheetEntry['type'], status: 'spent' | 'requested' | 'claimed') {
+  if (!endpoint) {
+    throw new Error('Missing Google Sheet webhook URL (VITE_SHEET_WEBAPP_URL).');
+  }
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/plain'
+    },
+    body: JSON.stringify({ action: 'updateStatus', id, type, status })
+  });
+
+  return handleApiResponse(response, 'Failed to update status.');
+}
+
+// Helper function to handle GET API responses with JSON parsing
+async function handleGetApiResponse(response: Response, defaultError: string): Promise<any> {
   const contentType = response.headers.get('content-type');
   const isJson = contentType && contentType.includes('application/json');
 
   if (!response.ok) {
     const message = isJson 
-      ? (await response.json().catch(() => ({}))).error || 'Xóa không thành công.'
-      : await response.text().catch(() => 'Xóa không thành công.');
+      ? (await response.json().catch(() => ({}))).error || defaultError
+      : await response.text().catch(() => defaultError);
     throw new Error(message);
   }
 
   if (!isJson) {
     const text = await response.text();
     if (text.includes('<html>') || text.includes('<!DOCTYPE')) {
-      throw new Error('Apps Script trả về lỗi HTML. Kiểm tra lại script và deployment.');
+      throw new Error('Apps Script returned HTML error. Check script and deployment.');
     }
-    return {};
+    throw new Error('Invalid response from server.');
   }
 
-  return response.json().catch(() => ({}));
+  return response.json();
 }
 
 export async function fetchTotal(): Promise<number> {
   if (!endpoint) {
-    throw new Error('Thiếu URL webhook Google Sheet (VITE_SHEET_WEBAPP_URL).');
+    throw new Error('Missing Google Sheet webhook URL (VITE_SHEET_WEBAPP_URL).');
   }
 
   const url = new URL(endpoint);
@@ -101,31 +128,80 @@ export async function fetchTotal(): Promise<number> {
     headers: { 'Content-Type': 'text/plain' }
   });
 
-  const contentType = response.headers.get('content-type');
-  const isJson = contentType && contentType.includes('application/json');
+  const data = await handleGetApiResponse(response, 'Failed to fetch total.');
+  return typeof data.total === 'number' ? data.total : 0;
+}
+
+export type OverallTotals = {
+  totalPaid: number;
+  totalClaimed: number;
+  remaining: number;
+};
+
+export type MonthlyTotals = {
+  totalPaid: number;
+  totalClaimed: number;
+  remaining: number;
+};
+
+export type AvailableMonth = {
+  monthYear: string; // Format: "Jan / 2024"
+  month: number; // 0-11
+  year: number;
+};
+
+export async function fetchOverallTotals(): Promise<OverallTotals> {
+  if (!endpoint) {
+    throw new Error('Missing Google Sheet webhook URL (VITE_SHEET_WEBAPP_URL).');
+  }
+
+  const url = new URL(endpoint);
+  url.searchParams.set('overallTotals', 'true');
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: { 'Content-Type': 'text/plain' }
+  });
+
+  const data = await handleGetApiResponse(response, 'Failed to fetch overall totals.');
+  return {
+    totalPaid: typeof data.totalPaid === 'number' ? data.totalPaid : 0,
+    totalClaimed: typeof data.totalClaimed === 'number' ? data.totalClaimed : 0,
+    remaining: typeof data.remaining === 'number' ? data.remaining : 0,
+  };
+}
+
+// Helper function to handle GET responses that may return HTML errors
+async function handleGetApiResponseWithTextCheck(response: Response, defaultError: string): Promise<any> {
+  // Read response as text first to check if it's HTML
+  const text = await response.text().catch(() => '');
+  
+  // Check if response is HTML error page
+  if (text.includes('<html>') || text.includes('<!DOCTYPE') || text.includes('Lỗi')) {
+    throw new Error('Apps Script returned HTML error. Ensure deployment is set to "Who has access: Anyone" and script has no errors.');
+  }
 
   if (!response.ok) {
-    const message = isJson 
-      ? (await response.json().catch(() => ({}))).error || 'Không thể lấy tổng.'
-      : await response.text().catch(() => 'Không thể lấy tổng.');
-    throw new Error(message);
-  }
-
-  if (!isJson) {
-    const text = await response.text();
-    if (text.includes('<html>') || text.includes('<!DOCTYPE')) {
-      throw new Error('Apps Script trả về lỗi HTML. Kiểm tra lại script và deployment.');
+    try {
+      const json = JSON.parse(text);
+      throw new Error(json.error || defaultError);
+    } catch {
+      throw new Error(text || defaultError);
     }
-    throw new Error('Phản hồi không hợp lệ từ server.');
   }
 
-  const data = await response.json();
-  return typeof data.total === 'number' ? data.total : 0;
+  // Try to parse as JSON
+  try {
+    const json = JSON.parse(text);
+    return json;
+  } catch (e) {
+    throw new Error('Invalid JSON response from server: ' + text.substring(0, 100));
+  }
 }
 
 export async function fetchLogsByDateRange(dateFrom: string, dateTo: string): Promise<SheetLogResponse> {
   if (!endpoint) {
-    throw new Error('Thiếu URL webhook Google Sheet (VITE_SHEET_WEBAPP_URL).');
+    throw new Error('Missing Google Sheet webhook URL (VITE_SHEET_WEBAPP_URL).');
   }
 
   const url = new URL(endpoint);
@@ -137,35 +213,12 @@ export async function fetchLogsByDateRange(dateFrom: string, dateTo: string): Pr
     headers: { 'Content-Type': 'text/plain' }
   });
 
-  // Read response as text first to check if it's HTML
-  const text = await response.text().catch(() => '');
-  
-  // Check if response is HTML error page
-  if (text.includes('<html>') || text.includes('<!DOCTYPE') || text.includes('Lỗi')) {
-    throw new Error('Apps Script trả về lỗi HTML. Đảm bảo deployment được set "Who has access: Anyone" và script không có lỗi.');
-  }
-
-  if (!response.ok) {
-    try {
-      const json = JSON.parse(text);
-      throw new Error(json.error || 'Không thể lấy log theo khoảng ngày.');
-    } catch {
-      throw new Error(text || 'Không thể lấy log theo khoảng ngày.');
-    }
-  }
-
-  // Try to parse as JSON
-  try {
-    const json = JSON.parse(text);
-    return json;
-  } catch (e) {
-    throw new Error('Phản hồi không phải JSON hợp lệ từ server: ' + text.substring(0, 100));
-  }
+  return handleGetApiResponseWithTextCheck(response, 'Failed to fetch logs by date range.');
 }
 
 export async function fetchRecentItems(limit: number = 10): Promise<SheetLogResponse> {
   if (!endpoint) {
-    throw new Error('Thiếu URL webhook Google Sheet (VITE_SHEET_WEBAPP_URL).');
+    throw new Error('Missing Google Sheet webhook URL (VITE_SHEET_WEBAPP_URL).');
   }
 
   const url = new URL(endpoint);
@@ -177,28 +230,51 @@ export async function fetchRecentItems(limit: number = 10): Promise<SheetLogResp
     headers: { 'Content-Type': 'text/plain' }
   });
 
-  // Read response as text first to check if it's HTML
-  const text = await response.text().catch(() => '');
+  return handleGetApiResponseWithTextCheck(response, 'Failed to fetch recent items.');
+}
+
+export async function fetchAvailableMonths(): Promise<AvailableMonth[]> {
+  if (!endpoint) {
+    throw new Error('Missing Google Sheet webhook URL (VITE_SHEET_WEBAPP_URL).');
+  }
+
+  const url = new URL(endpoint);
+  url.searchParams.set('availableMonths', 'true');
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: { 'Content-Type': 'text/plain' }
+  });
+
+  const data = await handleGetApiResponseWithTextCheck(response, 'Failed to fetch available months.');
   
-  // Check if response is HTML error page
-  if (text.includes('<html>') || text.includes('<!DOCTYPE') || text.includes('Lỗi')) {
-    throw new Error('Apps Script trả về lỗi HTML. Đảm bảo deployment được set "Who has access: Anyone" và script không có lỗi.');
+  if (Array.isArray(data.months)) {
+    return data.months;
+  } else if (Array.isArray(data)) {
+    // Handle case where API returns array directly
+    return data;
+  }
+  return [];
+}
+
+export async function fetchMonthlyTotals(monthYear: string): Promise<MonthlyTotals> {
+  if (!endpoint) {
+    throw new Error('Missing Google Sheet webhook URL (VITE_SHEET_WEBAPP_URL).');
   }
 
-  if (!response.ok) {
-    try {
-      const json = JSON.parse(text);
-      throw new Error(json.error || 'Không thể lấy bản ghi gần đây.');
-    } catch {
-      throw new Error(text || 'Không thể lấy bản ghi gần đây.');
-    }
-  }
+  const url = new URL(endpoint);
+  url.searchParams.set('monthlyTotals', 'true');
+  url.searchParams.set('monthYear', monthYear);
 
-  // Try to parse as JSON
-  try {
-    const json = JSON.parse(text);
-    return json;
-  } catch (e) {
-    throw new Error('Phản hồi không phải JSON hợp lệ từ server: ' + text.substring(0, 100));
-  }
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: { 'Content-Type': 'text/plain' }
+  });
+
+  const data = await handleGetApiResponseWithTextCheck(response, 'Failed to fetch monthly totals.');
+  return {
+    totalPaid: typeof data.totalPaid === 'number' ? data.totalPaid : 0,
+    totalClaimed: typeof data.totalClaimed === 'number' ? data.totalClaimed : 0,
+    remaining: typeof data.remaining === 'number' ? data.remaining : 0,
+  };
 }

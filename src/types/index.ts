@@ -1,4 +1,6 @@
-export type EntryType = "spending" | "receiving";
+export type EntryType = "spending";
+
+export type SpendingStatus = "spent" | "requested" | "claimed";
 
 export type FormValues = {
   occurredAt: string;
@@ -10,6 +12,7 @@ export type SpendingItem = {
   id: string;
   description: string;
   amount: number;
+  status: SpendingStatus;
   amountError?: string;
   descriptionError?: string;
 };
