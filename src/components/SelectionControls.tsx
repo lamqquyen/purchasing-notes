@@ -7,6 +7,10 @@ import {
   SelectButton,
   SelectionDescription,
   ActionsWrapper,
+  TotalsContainer,
+  TotalsItem,
+  TotalsItemTitle,
+  TotalsItemValue,
 } from "../styles";
 import type { SpendingStatus } from "../types";
 
@@ -39,28 +43,23 @@ export function SelectionControls({
   return (
     <>
       {showTotals && totals && (
-        <div
-          style={{
-            marginTop: "8px",
-            color: "#213560",
-            fontWeight: 600,
-            display: "flex",
-            justifyContent: "space-between",
-            alignItems: "center",
-            gap: "8px",
-          }}
-        >
-          <div>Paid: {totals.spending.toLocaleString("vi-VN")} đ</div>
-          <div>VAT collected: {totals.vat.toLocaleString("vi-VN")} đ</div>
-          <div>
-            Remaining:{" "}
-            {(totals.vat - totals.spending < 0
+        <TotalsContainer>
+          <TotalsItem>
+            <TotalsItemTitle>Paid:</TotalsItemTitle>
+            <TotalsItemValue>{totals.spending.toLocaleString("vi-VN")} đ</TotalsItemValue>
+          </TotalsItem>
+          <TotalsItem>
+            <TotalsItemTitle>VAT collected:</TotalsItemTitle>
+            <TotalsItemValue>{totals.vat.toLocaleString("vi-VN")} đ</TotalsItemValue>
+          </TotalsItem>
+          <TotalsItem>
+            <TotalsItemTitle>Remaining:</TotalsItemTitle>
+            <TotalsItemValue>{(totals.vat - totals.spending < 0
               ? Math.abs(totals.vat - totals.spending)
               : 0
-            ).toLocaleString("vi-VN")}{" "}
-            đ
-          </div>
-        </div>
+            ).toLocaleString("vi-VN")} đ</TotalsItemValue>
+          </TotalsItem>
+        </TotalsContainer>
       )}
       <StyledSelectionControls>
         <SelectRow>

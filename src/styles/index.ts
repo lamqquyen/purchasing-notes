@@ -153,7 +153,8 @@ export const SelectButton = styled.button<{ $active: boolean }>`
   transition: all 0.2s ease;
 
   &:hover {
-    background: ${({ $active }) => ($active ? "#1e3a8a" : "rgba(33, 53, 96, 0.1)")};
+    background: ${({ $active }) =>
+      $active ? "#1e3a8a" : "rgba(33, 53, 96, 0.1)"};
   }
 
   @media (max-width: 768px) {
@@ -180,7 +181,7 @@ export const Button = styled.button`
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   width: 100%;
   box-shadow: 0 2px 6px -1px rgba(33, 53, 96, 0.25);
-  
+
   &:hover {
     transform: translateY(-1px);
     background: linear-gradient(135deg, #1e3a8a, #1e40af);
@@ -271,12 +272,13 @@ export const Tabs = styled.div<{ $activeIndex?: number; $count?: number }>`
   margin-bottom: 16px;
   width: 100%;
   position: relative;
-  
+
   &::after {
-    content: '';
+    content: "";
     position: absolute;
     bottom: -2px;
-    left: ${({ $activeIndex = 0, $count = 2 }) => `calc(${($activeIndex / ($count || 1)) * 100}% )`};
+    left: ${({ $activeIndex = 0, $count = 2 }) =>
+      `calc(${($activeIndex / ($count || 1)) * 100}% )`};
     width: ${({ $count = 2 }) => `${100 / $count}%`};
     height: 3px;
     background: #213560;
@@ -296,7 +298,8 @@ export const Tab = styled.button<{ $active: boolean }>`
   font-size: 14px;
   cursor: pointer;
   position: relative;
-  transition: color 0.3s cubic-bezier(0.4, 0, 0.2, 1), font-weight 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: color 0.3s cubic-bezier(0.4, 0, 0.2, 1),
+    font-weight 0.3s cubic-bezier(0.4, 0, 0.2, 1);
   flex: 1;
   text-align: center;
   z-index: 1;
@@ -476,7 +479,7 @@ export const DeleteButton = styled.button`
   cursor: pointer;
   transition: all 0.2s ease;
   flex-shrink: 0;
-  width: 'fit-content';
+  width: "fit-content";
 
   &:hover {
     background: #fecaca;
@@ -512,6 +515,48 @@ export const Checkbox = styled.input`
   accent-color: #213560;
 `;
 
+export const TotalsContainer = styled.div`
+  display: flex;
+  justifyContent: space-between;
+  marginTop: 8px;
+  color: #213560;
+  fontWeight: 600;
+  alignItems: center;
+  gap: 12px;
+  padding: 12px;
+  background: rgba(248, 250, 252, 0.8);
+  border-radius: 10px;
+  border: 1px solid rgba(33, 53, 96, 0.2);
+
+  @media (max-width: 586px) {
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+  }
+`;
+
+export const TotalsItem = styled.div`
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 4px;
+  background: rgba(248, 250, 252, 0.8);
+  border-radius: 10px;
+
+`;
+export const TotalsItemTitle = styled.span`
+  font-size: 14px;
+  color: #64748b;
+`;
+export const TotalsItemValue = styled.span`
+  font-size: 18px;
+  color: #213560;
+  font-weight: 600;
+
+`;
+
 export const SelectionControls = styled.div`
   display: flex;
   justify-content: space-between;
@@ -531,12 +576,12 @@ export const SelectionControls = styled.div`
 `;
 
 export const SelectionDescription = styled.span`
-  fontSize: 14px; 
+  fontsize: 14px;
   color: #64748b;
-  textAlign: "right";
+  textalign: "right";
 
   @media (max-width: 768px) {
-    textAlign: "center";
+    textalign: "center";
   }
 `;
 
@@ -585,7 +630,7 @@ export const TotalDisplay = styled.div`
   text-align: center;
   margin-bottom: 24px;
   box-shadow: 0 3px 10px -2px rgba(33, 53, 96, 0.25);
-  
+
   h2 {
     margin: 0 0 8px 0;
     font-size: 14px;
@@ -593,7 +638,7 @@ export const TotalDisplay = styled.div`
     opacity: 0.95;
     letter-spacing: 0.5px;
   }
-  
+
   h3 {
     margin: 0 0 8px 0;
     font-size: 12px;
@@ -601,14 +646,14 @@ export const TotalDisplay = styled.div`
     opacity: 0.9;
     letter-spacing: 0.5px;
   }
-  
+
   .amount {
     font-size: 24px;
     font-weight: 700;
     margin: 0;
     text-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
   }
-  
+
   .totals-grid {
     display: grid;
     grid-template-columns: repeat(3, 1fr);
@@ -616,18 +661,18 @@ export const TotalDisplay = styled.div`
     width: 100%;
     align-items: center;
   }
-  
+
   @media (max-width: 768px) {
     padding: 16px;
-    
+
     .amount {
       font-size: 18px;
     }
-    
+
     h3 {
       font-size: 11px;
     }
-    
+
     .totals-grid {
       grid-template-columns: 1fr;
       gap: 12px;
