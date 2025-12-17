@@ -5,6 +5,8 @@ import {
   DeleteButton,
   SelectRow,
   SelectButton,
+  SelectionDescription,
+  ActionsWrapper,
 } from "../styles";
 import type { SpendingStatus } from "../types";
 
@@ -52,86 +54,77 @@ export function SelectionControls({
           <div>VAT collected: {totals.vat.toLocaleString("vi-VN")} đ</div>
           <div>
             Remaining:{" "}
-            {(totals.vat - totals.spending < 0 ? Math.abs(totals.vat - totals.spending) : 0).toLocaleString("vi-VN")} đ
+            {(totals.vat - totals.spending < 0
+              ? Math.abs(totals.vat - totals.spending)
+              : 0
+            ).toLocaleString("vi-VN")}{" "}
+            đ
           </div>
         </div>
       )}
       <StyledSelectionControls>
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "space-between",
-            gap: "10px",
-            flexWrap: "wrap",
-            width: "100%",
-          }}
-        >
-          <SelectRow>
-            <SelectButton
-              type="button"
-              $active={selectionMode === "totals"}
-              onClick={() => onSelectionModeChange("totals")}
-            >
-              Totals
-            </SelectButton>
-            <SelectButton
-              type="button"
-              $active={selectionMode === "delete"}
-              onClick={() => onSelectionModeChange("delete")}
-            >
-              Delete
-            </SelectButton>
-          </SelectRow>
-          <div
-            style={{ display: "flex", flexDirection: "column", gap: "10px"}}
+        <SelectRow>
+          <SelectButton
+            type="button"
+            $active={selectionMode === "totals"}
+            onClick={() => onSelectionModeChange("totals")}
           >
-            <SelectionActions style={{ flex: 1 }}>
-              <Button
-                type="button"
-                onClick={onSelectAll}
-                style={{
-                  background: "rgba(33, 53, 96, 0.1)",
-                  color: "#213560",
-                  fontSize: 12,
-                  padding: "6px 12px",
-                  width: "fit-content",
-                }}
-              >
-                Select All
-              </Button>
-              {selectedCount > 0 && (
-                <>
-                  <Button
-                    type="button"
-                    onClick={onClearSelection}
-                    style={{
-                      background: "#f1f5f9",
-                      color: "#64748b",
-                      fontSize: 12,
-                      padding: "6px 12px",
-                      width: "fit-content",
-                    }}
-                  >
-                    Clear
-                  </Button>
-                  {selectionMode === "delete" && (
-                    <DeleteButton type="button" onClick={onDeleteSelected}>
-                      Delete {selectedCount} item(s)
-                    </DeleteButton>
-                  )}
-                </>
-              )}
-            </SelectionActions>
-            <span style={{ fontSize: 14, color: "#64748b", textAlign: "right" }}>
-              {selectedCount > 0
-                ? `${selectedCount} item(s) selected`
-                : selectionMode === "totals"
-                ? "Select items to see totals"
-                : "Select multiple items to update or delete"}
-            </span>
-          </div>
-        </div>
+            Totals
+          </SelectButton>
+          <SelectButton
+            type="button"
+            $active={selectionMode === "delete"}
+            onClick={() => onSelectionModeChange("delete")}
+          >
+            Delete
+          </SelectButton>
+        </SelectRow>
+        <ActionsWrapper>
+          <SelectionActions style={{ flex: 1 }}>
+            <Button
+              type="button"
+              onClick={onSelectAll}
+              style={{
+                background: "rgba(33, 53, 96, 0.1)",
+                color: "#213560",
+                fontSize: 12,
+                padding: "6px 12px",
+                width: "fit-content",
+              }}
+            >
+              Select All
+            </Button>
+            {selectedCount > 0 && (
+              <>
+                <Button
+                  type="button"
+                  onClick={onClearSelection}
+                  style={{
+                    background: "#f1f5f9",
+                    color: "#64748b",
+                    fontSize: 12,
+                    padding: "6px 12px",
+                    width: "fit-content",
+                  }}
+                >
+                  Clear
+                </Button>
+                {selectionMode === "delete" && (
+                  <DeleteButton type="button" onClick={onDeleteSelected}>
+                    Delete {selectedCount} item(s)
+                  </DeleteButton>
+                )}
+              </>
+            )}
+          </SelectionActions>
+          <SelectionDescription>
+            {selectedCount > 0
+              ? `${selectedCount} item(s) selected`
+              : selectionMode === "totals"
+              ? "Select items to see totals"
+              : "Select multiple items to update or delete"}
+          </SelectionDescription>
+        </ActionsWrapper>
       </StyledSelectionControls>
     </>
   );

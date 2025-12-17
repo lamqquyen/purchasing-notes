@@ -136,6 +136,10 @@ export const SelectRow = styled.div`
   border: 1px solid rgba(33, 53, 96, 0.2);
   gap: 6px;
   width: fit-content;
+
+  @media (max-width: 768px) {
+    width: 100%;
+  }
 `;
 
 export const SelectButton = styled.button<{ $active: boolean }>`
@@ -150,6 +154,10 @@ export const SelectButton = styled.button<{ $active: boolean }>`
 
   &:hover {
     background: ${({ $active }) => ($active ? "#1e3a8a" : "rgba(33, 53, 96, 0.1)")};
+  }
+
+  @media (max-width: 768px) {
+    flex: 1;
   }
 `;
 
@@ -184,6 +192,20 @@ export const Button = styled.button`
     cursor: not-allowed;
     transform: none;
     box-shadow: none;
+  }
+
+  @media (max-width: 768px) {
+    flex: 1;
+  }
+`;
+
+export const ActionsWrapper = styled.div`
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+
+  @media (max-width: 768px) {
+    width: 100%;
   }
 `;
 
@@ -503,7 +525,18 @@ export const SelectionControls = styled.div`
 
   @media (max-width: 768px) {
     flex-direction: column;
-    align-items: stretch;
+    align-items: center;
+    justify-content: center;
+  }
+`;
+
+export const SelectionDescription = styled.span`
+  fontSize: 14px; 
+  color: #64748b;
+  textAlign: "right";
+
+  @media (max-width: 768px) {
+    textAlign: "center";
   }
 `;
 
@@ -515,6 +548,7 @@ export const SelectionActions = styled.div`
 
   @media (max-width: 768px) {
     width: 100%;
+    justify-content: center;
   }
 `;
 
