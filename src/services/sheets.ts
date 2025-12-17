@@ -6,6 +6,18 @@ export type SheetEntry = {
   status: 'spent' | 'requested' | 'claimed';
 };
 
+export type VatCollectedEntry = {
+  type: 'vatCollected';
+  occurredAt: string;
+  amount: number;
+};
+
+export type VatLogItem = {
+  id: string;
+  date: string;
+  amount: number;
+};
+
 export type SheetLogItem = {
   id: string;
   date: string;
@@ -17,6 +29,7 @@ export type SheetLogItem = {
 export type SheetLogResponse = {
   total?: number;
   spending?: SheetLogItem[];
+  vat?: VatLogItem[];
 };
 
 const endpoint = import.meta.env.VITE_SHEET_WEBAPP_URL;
@@ -60,7 +73,43 @@ export async function logEntry(entry: SheetEntry) {
   return handleApiResponse(response, 'Failed to log transaction.');
 }
 
-export async function deleteEntry(id: string, type: SheetEntry['type']) {
+export async function logVatCollected(entry: VatCollectedEntry) {
+  if (!endpoint) {
+    throw new Error('Missing Google Sheet webhook URL (VITE_SHEET_WEBAPP_URL).');
+  }
+
+  const payload = { ...entry };
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/plain'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  return handleApiResponse(response, 'Failed to log VAT collected record.');
+}
+
+export async function fetchVatCollected(limit: number = 50): Promise<VatLogItem[]> {
+  if (!endpoint) {
+    throw new Error('Missing Google Sheet webhook URL (VITE_SHEET_WEBAPP_URL).');
+  }
+
+  const url = new URL(endpoint);
+  url.searchParams.set('vatCollected', 'true');
+  url.searchParams.set('limit', String(limit));
+
+  const response = await fetch(url.toString(), {
+    method: 'GET',
+    headers: { 'Content-Type': 'text/plain' }
+  });
+
+  const data = await handleGetApiResponseWithTextCheck(response, 'Failed to fetch VAT collected records.');
+  return Array.isArray(data.vat) ? data.vat : [];
+}
+
+export async function deleteEntry(id: string, type: "spending" | "vatCollected") {
   if (!endpoint) {
     throw new Error('Missing Google Sheet webhook URL (VITE_SHEET_WEBAPP_URL).');
   }

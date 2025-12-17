@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import type React from "react";
 import { useForm } from "react-hook-form";
 import {
   deleteEntry,
@@ -7,6 +8,7 @@ import {
   fetchTotal,
   fetchOverallTotals,
   logEntry,
+  logVatCollected,
   type SheetLogResponse,
   type OverallTotals,
 } from "./services/sheets";
@@ -18,6 +20,8 @@ import {
   getPastTwoDaysRange,
   convertDDMMYYYYToYYYYMMDD,
   requiredMessage,
+  formatNumberWithPeriods,
+  parseFormattedNumber,
 } from "./utils";
 import {
   GlobalStyle,
@@ -29,6 +33,11 @@ import {
   Badge,
   Tabs,
   Tab,
+  Input,
+  Field,
+  Button,
+  Helper,
+  Form,
 } from "./styles";
 import { LoadingOverlay } from "./components/LoadingOverlay";
 import { TotalDisplay } from "./components/TotalDisplay";
@@ -61,8 +70,27 @@ function App() {
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [pendingStatusChanges, setPendingStatusChanges] = useState<Map<string, { from: SpendingStatus; to: SpendingStatus; description: string }>>(new Map());
   const [showStatusModal, setShowStatusModal] = useState(false);
-  const [mainTab, setMainTab] = useState<"create" | "track">("create");
+  const [mainTab, setMainTab] = useState<"create" | "vat" | "track">("create");
   const [totalDisplayRefreshKey, setTotalDisplayRefreshKey] = useState(0);
+  const [selectionMode, setSelectionMode] = useState<"totals" | "delete">("totals");
+
+  useEffect(() => {
+    if (mainTab === "track") {
+      onFetchRecentItems();
+    }
+  }, [mainTab]);
+
+  useEffect(() => {
+    if (selectionMode !== "totals") return;
+    // Auto-select all items when in totals mode
+    const source = activeTab === "recent" ? recentLogs : logs;
+    if (!source) return;
+    selectAllItems();
+  }, [selectionMode, activeTab, recentLogs, logs]);
+  const [vatItems, setVatItems] = useState<Array<{ id: string; date: string; amount: number; amountError?: string }>>([
+    { id: "vat-1", date: getTodayVNT(), amount: 0 }
+  ]);
+  const [vatSubmitState, setVatSubmitState] = useState<SubmitState>({ status: "idle" });
   const {
     register,
     handleSubmit,
@@ -313,10 +341,10 @@ function App() {
 
   const selectAllItems = () => {
     const allItems = new Set<string>();
-    if (activeTab === "recent" && recentLogs) {
-      recentLogs.spending?.forEach(item => allItems.add(`spending:${item.id}`));
-    } else if (activeTab === "filter" && logs) {
-      logs.spending?.forEach(item => allItems.add(`spending:${item.id}`));
+    const source = activeTab === "recent" ? recentLogs : logs;
+    if (source) {
+      source.spending?.forEach(item => allItems.add(`spending:${item.id}`));
+      source.vat?.forEach(item => allItems.add(`vatCollected:${item.id}`));
     }
     setSelectedItems(allItems);
   };
@@ -367,7 +395,7 @@ function App() {
     setIsOperationLoading(true);
 
     // Call backend
-    Promise.all(itemsToDelete.map(({ id, type }) => deleteEntry(id, type)))
+    Promise.all(itemsToDelete.map(({ id, type }) => deleteEntry(id, type === "vatCollected" ? "vatCollected" : "spending")))
       .then(async () => {
         try {
           await refreshData();
@@ -393,7 +421,7 @@ function App() {
     setIsOperationLoading(true);
     
     // Call backend
-    deleteEntry(id, entryType)
+    deleteEntry(id, entryType === "vatCollected" ? "vatCollected" : "spending")
       .then(async () => {
         try {
           await refreshData();
@@ -486,6 +514,62 @@ function App() {
       });
   };
 
+  const addVatItem = () => {
+    setVatItems(prev => [...prev, { id: `vat-${Date.now()}`, date: getTodayVNT(), amount: 0 }]);
+  };
+
+  const updateVatItem = (id: string, field: "date" | "amount", value: string) => {
+    setVatItems(prev =>
+      prev.map(item =>
+        item.id === id
+          ? {
+              ...item,
+              [field]: field === "amount" ? parseFormattedNumber(value) : value,
+              amountError: field === "amount" ? undefined : item.amountError
+            }
+          : item
+      )
+    );
+  };
+
+  const removeVatItem = (id: string) => {
+    setVatItems(prev => (prev.length > 1 ? prev.filter(i => i.id !== id) : prev));
+  };
+
+  const onSubmitVatCollected = async (event?: React.FormEvent<HTMLFormElement>) => {
+    if (event && event.preventDefault) {
+      event.preventDefault();
+    }
+    let hasErrors = false;
+    const validated = vatItems.map(item => {
+      const amountValue = Number(item.amount);
+      if (!item.date || !amountValue || isNaN(amountValue) || amountValue <= 0) {
+        hasErrors = true;
+        return { ...item, amountError: !amountValue || amountValue <= 0 ? "Amount must be greater than 0." : undefined };
+      }
+      return { ...item, amountError: undefined };
+    });
+    setVatItems(validated);
+    if (hasErrors) {
+      setVatSubmitState({ status: "error", message: "Please fix invalid VAT items." });
+      return;
+    }
+
+    setVatSubmitState({ status: "submitting" });
+    try {
+      await Promise.all(
+        validated.map(item =>
+          logVatCollected({ type: "vatCollected", occurredAt: item.date, amount: Number(item.amount) })
+        )
+      );
+      setVatSubmitState({ status: "success", message: "VAT collected record saved." });
+      setVatItems([{ id: "vat-1", date: getTodayVNT(), amount: 0 }]);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to submit VAT collected record.";
+      setVatSubmitState({ status: "error", message });
+    }
+  };
+
   const onCancelStatusChanges = () => {
     setShowStatusModal(false);
     // Optionally clear pending changes on cancel
@@ -497,11 +581,11 @@ function App() {
     if (!confirm(`Are you sure you want to update ${selectedItems.size} selected record(s) to "${status}"?`)) return;
 
     // Parse selected items into {id, type} pairs
-    const itemsToUpdate: Array<{ id: string; type: EntryType }> = [];
+    const itemsToUpdate: Array<{ id: string; type: "spending" }> = [];
 
     selectedItems.forEach(key => {
-      const [type, id] = key.split(':') as [EntryType, string];
-      itemsToUpdate.push({ id, type });
+      const [, id] = key.split(':') as [EntryType, string];
+      itemsToUpdate.push({ id, type: "spending" });
     });
 
     // Clear selection
@@ -511,7 +595,7 @@ function App() {
     setIsOperationLoading(true);
 
     // Call backend for all items
-    Promise.all(itemsToUpdate.map(({ id, type }) => updateEntryStatus(id, type, status)))
+    Promise.all(itemsToUpdate.map(({ id }) => updateEntryStatus(id, "spending", status)))
       .then(async () => {
         try {
           await refreshData();
@@ -542,13 +626,17 @@ function App() {
             <LogoContainer>
               <img style={{ scale: '75%' }} src={'hex.png'} alt="HexTrust" />
               <Title>
-                <h1>Payment Tracking</h1>
+                <h1>Trackings</h1>
               </Title>
             </LogoContainer>
             <Badge>Expense Management</Badge>
           </Header>
 
-          <Tabs style={{ marginTop: "24px" }} $activeIndex={mainTab === "create" ? 0 : 1}>
+          <Tabs
+            style={{ marginTop: "24px" }}
+            $activeIndex={mainTab === "create" ? 0 : mainTab === "vat" ? 1 : 2}
+            $count={3}
+          >
             <Tab
               type="button"
               $active={mainTab === "create"}
@@ -558,10 +646,17 @@ function App() {
             </Tab>
             <Tab
               type="button"
+              $active={mainTab === "vat"}
+              onClick={() => setMainTab("vat")}
+            >
+              Create VAT Collected Record
+            </Tab>
+            <Tab
+              type="button"
               $active={mainTab === "track"}
               onClick={() => setMainTab("track")}
             >
-              Track Payment
+              Trackings
             </Tab>
           </Tabs>
 
@@ -618,8 +713,82 @@ function App() {
                 onUpdateMultipleStatus={onUpdateMultipleStatus}
                 pendingStatusChanges={pendingStatusChanges}
                 onSubmitStatusChanges={onSubmitStatusChanges}
+                selectionMode={selectionMode}
+                onSelectionModeChange={(mode) => {
+                  setSelectionMode(mode);
+                  setSelectedItems(new Set());
+                }}
               />
             </>
+          )}
+
+          {mainTab === "vat" && (
+            <div style={{ display: "grid", gap: "16px", marginTop: "8px" }}>
+              <h3 style={{ margin: 0, color: "#213560" }}>VAT Collected Record</h3>
+              <Form onSubmit={onSubmitVatCollected} style={{ display: "grid", gap: "14px" }}>
+                {vatItems.map((item, idx) => (
+                  <div key={item.id} style={{ display: "grid", gap: "8px", padding: "12px", border: "1px solid rgba(33, 53, 96, 0.15)", borderRadius: "10px", background: "#f8fafc" }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <strong style={{ color: "#213560" }}>VAT Item {idx + 1}</strong>
+                      {vatItems.length > 1 && (
+                        <Button
+                          type="button"
+                          onClick={() => removeVatItem(item.id)}
+                          style={{ padding: "6px 10px", fontSize: "12px", width: "auto", alignSelf: "flex-start" }}
+                        >
+                          Remove
+                        </Button>
+                      )}
+                    </div>
+                    <Field>
+                      Date
+                      <Input
+                        type="date"
+                        value={item.date}
+                        onChange={(e) => updateVatItem(item.id, "date", e.target.value)}
+                        required
+                      />
+                    </Field>
+                    <Field>
+                      Amount
+                      <Input
+                        type="text"
+                        placeholder="0"
+                        value={formatNumberWithPeriods(item.amount)}
+                        onChange={(e) => updateVatItem(item.id, "amount", e.target.value)}
+                        required
+                      />
+                    </Field>
+                    {item.amountError && (
+                      <Helper style={{ color: "#b91c1c", marginTop: "-4px" }}>{item.amountError}</Helper>
+                    )}
+                  </div>
+                ))}
+
+                <Button
+                  type="button"
+                  onClick={addVatItem}
+                  style={{
+                  background: "#e9eaf1",
+                  color: "#213560",
+                  boxShadow: "0 2px 6px -1px rgba(33, 53, 96, 0.12)",
+                  border: "1px solid rgba(33, 53, 96, 0.15)",
+                  }}
+                >
+                  + Add another VAT item
+                </Button>
+
+                {vatSubmitState.status === "error" && (
+                  <Helper style={{ color: "#b91c1c", marginTop: "-4px" }}>{vatSubmitState.message}</Helper>
+                )}
+                {vatSubmitState.status === "success" && (
+                  <Helper style={{ color: "#166534", marginTop: "-4px" }}>{vatSubmitState.message}</Helper>
+                )}
+                <Button type="submit" disabled={vatSubmitState.status === "submitting"}>
+                  {vatSubmitState.status === "submitting" ? "Saving…" : "Save VAT Collected"}
+                </Button>
+              </Form>
+            </div>
           )}
           </Card>
         </Page>

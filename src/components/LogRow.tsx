@@ -23,18 +23,26 @@ export function LogRow({ item, entryType, isSelected, onSelect, onDelete, onUpda
     <StyledLogRow>
       {showCheckbox && (
         <Checkbox
+          className="log-checkbox"
           type="checkbox"
           checked={isSelected}
           onChange={onSelect}
         />
       )}
-      <span style={{ flex: 1 }}>{formatDateDDMMYYYY(item.date)}</span>
-      {entryType === "spending" && (
-        <span style={{ flex: 2 }}>{item.description || "—"}</span>
-      )}
+
+      <div className="log-main">
+        <span className="log-date">{formatDateDDMMYYYY(item.date)}</span>
+        {entryType === "spending" && (
+          <span className="log-desc">{item.description || "—"}</span>
+        )}
+        <strong className="log-amount">
+          {item.amount.toLocaleString("vi-VN")} đ
+        </strong>
+      </div>
+
       {entryType === "spending" && onUpdateStatus && (
-        <div style={{ flex: 1, display: "flex", justifyContent: "center", position: "relative" }}>
-          <SelectRow style={{ padding: "2px", gap: "4px" }}>
+        <div className="status-toggle">
+          <SelectRow style={{ padding: "2px", gap: "4px", width: "100%" }}>
             <SelectButton
               type="button"
               onClick={() => onUpdateStatus(item.id, "spent")}
@@ -42,7 +50,8 @@ export function LogRow({ item, entryType, isSelected, onSelect, onDelete, onUpda
               style={{ 
                 padding: "6px 10px", 
                 fontSize: "11px",
-                opacity: hasPendingChange && displayStatus !== "spent" ? 0.5 : 1
+                opacity: hasPendingChange && displayStatus !== "spent" ? 0.5 : 1,
+                flex: 1
               }}
             >
               Spent
@@ -54,7 +63,8 @@ export function LogRow({ item, entryType, isSelected, onSelect, onDelete, onUpda
               style={{ 
                 padding: "6px 10px", 
                 fontSize: "11px",
-                opacity: hasPendingChange && displayStatus !== "requested" ? 0.5 : 1
+                opacity: hasPendingChange && displayStatus !== "requested" ? 0.5 : 1,
+                flex: 1
               }}
             >
               Requested
@@ -66,7 +76,8 @@ export function LogRow({ item, entryType, isSelected, onSelect, onDelete, onUpda
               style={{ 
                 padding: "6px 10px", 
                 fontSize: "11px",
-                opacity: hasPendingChange && displayStatus !== "claimed" ? 0.5 : 1
+                opacity: hasPendingChange && displayStatus !== "claimed" ? 0.5 : 1,
+                flex: 1
               }}
             >
               Claimed
@@ -98,15 +109,14 @@ export function LogRow({ item, entryType, isSelected, onSelect, onDelete, onUpda
           )}
         </div>
       )}
+
       {entryType === "spending" && !onUpdateStatus && item.status && (
-        <span style={{ flex: 1, color: getStatusColor(currentStatus), fontSize: "12px", fontWeight: 500 }}>
+        <span className="log-status" style={{ color: getStatusColor(currentStatus) }}>
           {getStatusLabel(currentStatus)}
         </span>
       )}
-      <strong style={{ flex: 1, display: 'flex', justifyContent: 'flex-end' }}>
-        {item.amount.toLocaleString("vi-VN")} đ
-      </strong>
-      <DeleteButton type="button" onClick={onDelete}>
+
+      <DeleteButton className="delete-btn" type="button" onClick={onDelete}>
         Delete
       </DeleteButton>
     </StyledLogRow>

@@ -242,7 +242,7 @@ export const LogHeader = styled.div`
   }
 `;
 
-export const Tabs = styled.div<{ $activeIndex?: number }>`
+export const Tabs = styled.div<{ $activeIndex?: number; $count?: number }>`
   display: flex;
   gap: 0;
   border-bottom: 2px solid rgba(33, 53, 96, 0.2);
@@ -254,8 +254,8 @@ export const Tabs = styled.div<{ $activeIndex?: number }>`
     content: '';
     position: absolute;
     bottom: -2px;
-    left: ${({ $activeIndex = 0 }) => `${$activeIndex * 50}%`};
-    width: 50%;
+    left: ${({ $activeIndex = 0, $count = 2 }) => `calc(${($activeIndex / ($count || 1)) * 100}% )`};
+    width: ${({ $count = 2 }) => `${100 / $count}%`};
     height: 3px;
     background: #213560;
     transform-origin: center;
@@ -291,8 +291,8 @@ export const LogList = styled.div`
 `;
 
 export const LogRow = styled.div`
-  display: flex;
-  justify-content: space-between;
+  display: grid;
+  grid-template-columns: auto minmax(240px, 1.6fr) minmax(180px, 1fr) auto;
   align-items: center;
   gap: 12px;
   padding: 10px 12px;
@@ -302,10 +302,144 @@ export const LogRow = styled.div`
   font-size: 14px;
   color: #0f172a;
   transition: all 0.2s ease;
+  position: relative;
 
   &:hover {
     border-color: rgba(33, 53, 96, 0.3);
     box-shadow: 0 1px 4px -1px rgba(33, 53, 96, 0.1);
+  }
+
+  .log-checkbox {
+    flex-shrink: 0;
+    grid-column: 1;
+    grid-row: 1;
+  }
+
+  .log-main {
+    display: grid;
+    grid-template-columns: auto 1fr auto;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+    grid-column: 2;
+    grid-row: 1;
+  }
+
+  .log-date {
+    flex-shrink: 0;
+    color: #475569;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .log-desc {
+    flex: 1;
+    min-width: 0;
+    white-space: normal;
+    overflow: visible;
+    text-overflow: initial;
+    color: #0f172a;
+    font-weight: 600;
+    line-height: 1.35;
+  }
+
+  .status-toggle {
+    display: flex;
+    justify-content: center;
+    position: relative;
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .log-status {
+    flex: 1;
+    font-size: 12px;
+    font-weight: 500;
+    text-align: center;
+  }
+
+  @media (max-width: 900px) {
+    grid-template-columns: auto minmax(0, 1.4fr) minmax(0, 1fr) auto;
+    gap: 10px;
+  }
+
+  .log-amount {
+    flex-shrink: 0;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .delete-btn {
+    flex-shrink: 0;
+    width: auto;
+    grid-column: 4;
+    grid-row: 1;
+  }
+
+  @media (max-width: 640px) {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    padding: 44px 12px 12px;
+
+    .delete-btn {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      width: auto;
+      align-self: flex-start;
+    }
+
+    .log-checkbox {
+      position: absolute;
+      top: 10px;
+      left: 10px;
+      width: auto;
+      order: 0;
+    }
+
+    .log-main {
+      order: 1;
+      width: 100%;
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      align-items: center;
+      gap: 8px;
+      padding-top: 8px;
+    }
+
+    .log-desc {
+      white-space: normal;
+      overflow: visible;
+      text-overflow: initial;
+      line-height: 1.3;
+    }
+
+    .status-toggle {
+      order: 2;
+      width: 100%;
+      justify-content: flex-start;
+      margin-top: 6px;
+    }
+
+    .log-amount {
+      text-align: right;
+      font-size: 16px;
+      font-weight: 700;
+    }
+
+    .log-status {
+      order: 3;
+      width: 100%;
+      text-align: left;
+      font-size: 13px;
+    }
+
+    .log-checkbox {
+      order: 0;
+      width: auto;
+    }
   }
 `;
 
@@ -320,6 +454,7 @@ export const DeleteButton = styled.button`
   cursor: pointer;
   transition: all 0.2s ease;
   flex-shrink: 0;
+  width: 'fit-content';
 
   &:hover {
     background: #fecaca;
@@ -376,6 +511,7 @@ export const SelectionActions = styled.div`
   display: flex;
   gap: 8px;
   align-items: center;
+  justify-content: flex-end;
 
   @media (max-width: 768px) {
     width: 100%;
@@ -437,6 +573,14 @@ export const TotalDisplay = styled.div`
     font-weight: 700;
     margin: 0;
     text-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  }
+  
+  .totals-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    width: 100%;
+    align-items: center;
   }
   
   @media (max-width: 768px) {

@@ -181,15 +181,7 @@ export function TotalDisplay({ totals, refreshKey }: TotalDisplayProps) {
               ))}
             </select>
           </div>
-          <div style={{ 
-              display: "grid", 
-              gridTemplateColumns: "repeat(3, 1fr)", 
-              gap: "16px", 
-              width: "100%",
-              alignItems: "center"
-            }}
-            className="totals-grid"
-            >
+          <div className="totals-grid">
               <div>
                 <h3>Total Paid</h3>
                 <p className="amount">{displayTotals.totalPaid.toLocaleString("vi-VN")} đ</p>

@@ -53,6 +53,19 @@ export function sortLogsByDateDesc(logs: SheetLogResponse): SheetLogResponse {
     });
     sorted.spending = spendingWithIndex.map(({ item }) => item);
   }
+  if (sorted.vat) {
+    const vatWithIndex = sorted.vat.map((item, index) => ({ item, originalIndex: index }));
+    vatWithIndex.sort((a, b) => {
+      const dateA = parseDate(a.item.date);
+      const dateB = parseDate(b.item.date);
+      const diff = dateB.getTime() - dateA.getTime();
+      if (diff === 0) {
+        return b.originalIndex - a.originalIndex;
+      }
+      return diff;
+    });
+    sorted.vat = vatWithIndex.map(({ item }) => item);
+  }
   
   return sorted;
 }

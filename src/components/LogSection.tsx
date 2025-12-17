@@ -1,4 +1,4 @@
-import type { SheetLogResponse } from "../services/sheets";
+import type { SheetLogResponse, VatLogItem } from "../services/sheets";
 import type { EntryType, SubmitState } from "../types";
 import { formatDateDDMMYYYY } from "../utils";
 import {
@@ -22,6 +22,8 @@ interface LogSectionProps {
   recentLogs: SheetLogResponse | null;
   logs: SheetLogResponse | null;
   logState: SubmitState;
+  selectionMode: "totals" | "delete";
+  onSelectionModeChange: (mode: "totals" | "delete") => void;
   selectedItems: Set<string>;
   dateFrom: string;
   dateTo: string;
@@ -43,6 +45,9 @@ interface LogSectionProps {
 
 function LogsContent({
   logs,
+  vatLogs,
+  selectionMode,
+  onSelectionModeChange,
   selectedItems,
   onSelectAll,
   onClearSelection,
@@ -55,6 +60,9 @@ function LogsContent({
   onSubmitStatusChanges,
 }: {
   logs: SheetLogResponse | null;
+  vatLogs?: VatLogItem[];
+  selectionMode: "totals" | "delete";
+  onSelectionModeChange: (mode: "totals" | "delete") => void;
   selectedItems: Set<string>;
   onSelectAll: () => void;
   onClearSelection: () => void;
@@ -68,6 +76,23 @@ function LogsContent({
 }) {
   if (!logs) return null;
 
+  const totals = (() => {
+    if (selectionMode !== "totals") return undefined;
+    let spendingSum = 0;
+    let vatSum = 0;
+    logs.spending?.forEach(item => {
+      if (selectedItems.has(`spending:${item.id}`)) {
+        spendingSum += item.amount || 0;
+      }
+    });
+    vatLogs?.forEach(item => {
+      if (selectedItems.has(`vatCollected:${item.id}`)) {
+        vatSum += item.amount || 0;
+      }
+    });
+    return { spending: spendingSum, vat: vatSum, remainingVat: vatSum - spendingSum };
+  })();
+
   return (
     <>
       {!!logs.spending?.length && (
@@ -77,6 +102,9 @@ function LogsContent({
           onClearSelection={onClearSelection}
           onDeleteSelected={onDeleteMultiple}
           onUpdateStatus={onUpdateMultipleStatus}
+          selectionMode={selectionMode}
+          onSelectionModeChange={onSelectionModeChange}
+          totals={totals}
         />
       )}
       {pendingStatusChanges && pendingStatusChanges.size > 0 && onSubmitStatusChanges && (
@@ -115,6 +143,30 @@ function LogsContent({
             <Helper>No spending records.</Helper>
           )}
         </div>
+        <div>
+          <Row>
+            <strong>VAT Collected:</strong>
+            <strong style={{color: '#213560'}}>Total: {vatLogs?.reduce((acc, item) => acc + item.amount, 0).toLocaleString("vi-VN")} đ</strong>
+          </Row>
+          {!!vatLogs?.length ? (
+            <LogRowContainer>
+              {vatLogs.map((item, idx) => (
+                <LogRow
+                  key={`vat-${item.id || idx}`}
+                  item={{ id: item.id, date: item.date, amount: item.amount, description: "VAT collected", status: "spent" }}
+                  entryType="vatCollected"
+                  isSelected={selectedItems.has(`vatCollected:${item.id}`)}
+                  onSelect={() => onToggleSelection(item.id, "vatCollected")}
+                  onDelete={() => onDeleteEntry(item.id, "vatCollected")}
+                  showCheckbox={true}
+                  onUpdateStatus={undefined}
+                />
+              ))}
+            </LogRowContainer>
+          ) : (
+            <Helper>No VAT collected records.</Helper>
+          )}
+        </div>
       </LogList>
     </>
   );
@@ -125,6 +177,8 @@ export function LogSection({
   recentLogs,
   logs,
   logState,
+  selectionMode,
+  onSelectionModeChange,
   selectedItems,
   dateFrom,
   dateTo,
@@ -185,6 +239,9 @@ export function LogSection({
           {recentLogs && logState.status !== "submitting" && (
             <LogsContent
               logs={recentLogs}
+              vatLogs={recentLogs?.vat}
+              selectionMode={selectionMode}
+              onSelectionModeChange={onSelectionModeChange}
               selectedItems={selectedItems}
               onSelectAll={onSelectAll}
               onClearSelection={onClearSelection}
@@ -234,6 +291,9 @@ export function LogSection({
           {logs && logState.status !== "submitting" && (
             <LogsContent
               logs={logs}
+              vatLogs={logs?.vat}
+              selectionMode={selectionMode}
+              onSelectionModeChange={onSelectionModeChange}
               selectedItems={selectedItems}
               onSelectAll={onSelectAll}
               onClearSelection={onClearSelection}

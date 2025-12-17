@@ -5,6 +5,7 @@ const SHEET_ID = '19mW4uE0jLgrNGNq6GKmA3sZFuWs_dSdA-sN4oRnoBUg';
 const OVERALL_SHEET = 'Overall';
 
 const PAYMENT_SHEET = 'Payments';
+const VAT_SHEET = 'VAT collected';
 
 // ===== Helpers =====
 
@@ -18,7 +19,8 @@ function getSheets_() {
     const ss = SpreadsheetApp.openById(SHEET_ID);
     return {
       overall: ss.getSheetByName(OVERALL_SHEET),
-      payment: ss.getSheetByName(PAYMENT_SHEET)
+      payment: ss.getSheetByName(PAYMENT_SHEET),
+      vat: ss.getSheetByName(VAT_SHEET)
     };
   } catch (e) {
     throw new Error('Cannot open sheet: ' + e.toString());
@@ -41,6 +43,10 @@ function ensurePaymentSheet_(paymentSheet) {
   ensureHeaders_(paymentSheet, headers);
 }
 
+function ensureVatSheet_(vatSheet) {
+  const headers = ['ID', 'Date', 'How much', 'Created Date'];
+  ensureHeaders_(vatSheet, headers);
+}
 function ensureOverallSheet_(overallSheet) {
   const headers = ['Month / Year', 'Total Payment By Month', 'Total Claimed Payment', 'Remaining'];
   ensureHeaders_(overallSheet, headers);
@@ -420,10 +426,13 @@ function doPost(e) {
   try {
     const body = JSON.parse(e.postData.contents || '{}');
     const { action, type, occurredAt, amount, description = '', id, status } = body;
-    const { overall, payment } = getSheets_();
+    const { overall, payment, vat } = getSheets_();
 
     ensurePaymentSheet_(payment);
     ensureOverallSheet_(overall);
+    if (vat) {
+      ensureVatSheet_(vat);
+    }
 
     if (action === 'delete') {
       if (!id || !type) {
@@ -434,21 +443,28 @@ function doPost(e) {
         const dataRange = payment.getDataRange();
         const values = dataRange.getValues();
         
-        // Find the row to delete (skip header row, start from index 1)
         for (let i = 1; i < values.length; i++) {
           if (String(values[i][0]) === id) {
-            // deleteRow automatically shifts all rows below up
-            payment.deleteRow(i + 1); // +1 because deleteRow uses 1-based indexing
-            
-            // Update overall sheet
+            payment.deleteRow(i + 1);
             updateOverallSheet_(overall, payment);
-            
             return jsonOutput({ ok: true, deleted: id });
           }
         }
         return jsonOutput({ ok: false, error: 'Record not found for deletion' });
+      } else if (type === 'vatCollected') {
+        const ss = SpreadsheetApp.openById(SHEET_ID);
+        const vatSheet = vat || ss.getSheetByName(VAT_SHEET) || ss.insertSheet(VAT_SHEET);
+        ensureVatSheet_(vatSheet);
+        const values = vatSheet.getDataRange().getValues();
+        for (let i = 1; i < values.length; i++) {
+          if (String(values[i][0]) === id) {
+            vatSheet.deleteRow(i + 1);
+            return jsonOutput({ ok: true, deleted: id });
+          }
+        }
+        return jsonOutput({ ok: false, error: 'VAT record not found for deletion' });
       } else {
-        return jsonOutput({ ok: false, error: 'Invalid type. Only spending is supported.' });
+        return jsonOutput({ ok: false, error: 'Invalid type. Only spending and vatCollected are supported.' });
       }
     }
 
@@ -499,6 +515,16 @@ function doPost(e) {
       
       // Update overall sheet
       updateOverallSheet_(overall, payment);
+    } else if (type === 'vatCollected') {
+      const ss = SpreadsheetApp.openById(SHEET_ID);
+      const targetVatSheet = vat || ss.getSheetByName(VAT_SHEET) || ss.insertSheet(VAT_SHEET);
+      ensureVatSheet_(targetVatSheet);
+      // VAT collected: A=ID, B=Date, C=How much, D=Created Date
+      targetVatSheet.appendRow([uuid, new Date(occurredAt), Number(amount), now]);
+      const row = targetVatSheet.getLastRow();
+      targetVatSheet.getRange(row, 2).setNumberFormat('dd/MM/yyyy'); // Format date
+      targetVatSheet.getRange(row, 3).setNumberFormat('#,##0'); // Format amount
+      targetVatSheet.getRange(row, 4).setNumberFormat('dd/MM/yyyy HH:mm:ss'); // Format created date
     } else {
       return jsonOutput({ ok: false, error: 'Invalid type. Only spending is supported.' });
     }
@@ -582,8 +608,11 @@ function doGet(e) {
     // Check if recent items are requested (by creation date)
     if (e.parameter.recent === 'true' || e.parameter.recent === '1') {
       const limit = parseInt(e.parameter.limit || '10', 10);
-      const { payment } = getSheets_();
+      const { payment, vat } = getSheets_();
       ensurePaymentSheet_(payment);
+      const ss = SpreadsheetApp.openById(SHEET_ID);
+      const vatSheet = vat || ss.getSheetByName(VAT_SHEET) || ss.insertSheet(VAT_SHEET);
+      ensureVatSheet_(vatSheet);
       
       const totalVal = calculateTotalRemaining_();
       const paymentData = payment.getDataRange().getValues().slice(1);
@@ -609,17 +638,38 @@ function doGet(e) {
         .slice(0, limit)
         .map(({ _createdAt, ...rest }) => rest);
 
+      const vatData = vatSheet.getDataRange().getValues().slice(1);
+      const vatRows = vatData
+        .filter(r => r[0])
+        .map(r => {
+          const dateValue = r[1];
+          const createdAtValue = r[3] || r[1];
+          return {
+            id: String(r[0] || ''),
+            date: toDDMMYYYY_(dateValue),
+            amount: Number(r[2] || 0),
+            _createdAt: createdAtValue instanceof Date ? createdAtValue : new Date(createdAtValue)
+          };
+        })
+        .sort((a, b) => b._createdAt.getTime() - a._createdAt.getTime())
+        .slice(0, limit)
+        .map(({ _createdAt, ...rest }) => rest);
+
       return jsonOutput({
         total: totalVal,
-        spending: spendingRows
+        spending: spendingRows,
+        vat: vatRows
       });
     }
 
     // Otherwise, return logs with date range filtering (by creation date)
     const dateFrom = (e.parameter.dateFrom || '').trim();
     const dateTo = (e.parameter.dateTo || '').trim();
-    const { payment } = getSheets_();
+    const { payment, vat } = getSheets_();
     ensurePaymentSheet_(payment);
+    const ss = SpreadsheetApp.openById(SHEET_ID);
+    const vatSheet = vat || ss.getSheetByName(VAT_SHEET) || ss.insertSheet(VAT_SHEET);
+    ensureVatSheet_(vatSheet);
     
     const totalVal = calculateTotalRemaining_();
     const paymentData = payment.getDataRange().getValues().slice(1);
@@ -642,9 +692,26 @@ function doGet(e) {
       .filter(r => dateInRange_(r._createdAt, dateFrom, dateTo))
       .map(({ _createdAt, ...rest }) => rest);
 
+    const vatData = vatSheet.getDataRange().getValues().slice(1);
+    const vatRows = vatData
+      .filter(r => r[0])
+      .map((r) => {
+        const dateValue = r[1];
+        const createdAtValue = r[3] || r[1];
+        return {
+          id: String(r[0] || ''),
+          date: toDDMMYYYY_(dateValue),
+          amount: Number(r[2] || 0),
+          _createdAt: createdAtValue instanceof Date ? createdAtValue : new Date(createdAtValue)
+        };
+      })
+      .filter(r => dateInRange_(r._createdAt, dateFrom, dateTo))
+      .map(({ _createdAt, ...rest }) => rest);
+
     return jsonOutput({
       total: totalVal,
-      spending: spendingRows
+      spending: spendingRows,
+      vat: vatRows
     });
   } catch (e) {
     return jsonOutput({ ok: false, error: 'Error: ' + e.toString() });

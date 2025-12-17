@@ -1,4 +1,4 @@
-export type EntryType = "spending";
+export type EntryType = "spending" | "vatCollected";
 
 export type SpendingStatus = "spent" | "requested" | "claimed";
 
