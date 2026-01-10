@@ -4,6 +4,8 @@ import { useForm } from "react-hook-form";
 import {
   deleteEntry,
   updateEntryStatus,
+  updateEntry,
+  updateVatEntry,
   fetchLogsByDateRange,
   fetchTotal,
   fetchOverallTotals,
@@ -11,6 +13,8 @@ import {
   logVatCollected,
   type SheetLogResponse,
   type OverallTotals,
+  type SheetLogItem,
+  type VatLogItem,
 } from "./services/sheets";
 import type { EntryType, FormValues, SpendingItem, SpendingStatus, SubmitState } from "./types";
 import {
@@ -44,6 +48,7 @@ import { TotalDisplay } from "./components/TotalDisplay";
 import { TransactionForm } from "./components/TransactionForm";
 import { LogSection } from "./components/LogSection";
 import { StatusUpdateModal } from "./components/StatusUpdateModal";
+import { EditModal } from "./components/EditModal";
 import logo from "./logo.svg";
 
 
@@ -73,6 +78,7 @@ function App() {
   const [mainTab, setMainTab] = useState<"create" | "vat" | "track">("create");
   const [totalDisplayRefreshKey, setTotalDisplayRefreshKey] = useState(0);
   const [selectionMode, setSelectionMode] = useState<"totals" | "delete">("totals");
+  const [editingItem, setEditingItem] = useState<{ item: SheetLogItem | VatLogItem; type: EntryType } | null>(null);
 
   useEffect(() => {
     if (mainTab === "track") {
@@ -440,6 +446,51 @@ function App() {
       });
   };
 
+  const onEditEntry = (id: string, entryType: EntryType) => {
+    const source = activeTab === "recent" ? recentLogs : logs;
+    if (entryType === "spending") {
+      const item = source?.spending?.find(i => i.id === id);
+      if (item) {
+        setEditingItem({ item, type: "spending" });
+      }
+    } else if (entryType === "vatCollected") {
+      const item = source?.vat?.find(i => i.id === id);
+      if (item) {
+        setEditingItem({ item, type: "vatCollected" });
+      }
+    }
+  };
+
+  const onSaveEdit = async (data: { occurredAt: string; amount: number; description?: string; status?: SpendingStatus }) => {
+    if (!editingItem) return;
+
+    setIsOperationLoading(true);
+    try {
+      if (editingItem.type === "spending") {
+        await updateEntry(editingItem.item.id, "spending", {
+          occurredAt: data.occurredAt,
+          amount: data.amount,
+          description: data.description || "",
+          status: data.status || "spent",
+        });
+      } else {
+        await updateVatEntry(editingItem.item.id, {
+          occurredAt: data.occurredAt,
+          amount: data.amount,
+        });
+      }
+      setEditingItem(null);
+      await refreshData();
+      setTotalDisplayRefreshKey(prev => prev + 1);
+      setLogState({ status: "success", message: "Record updated successfully." });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Failed to update record.";
+      setLogState({ status: "error", message });
+    } finally {
+      setIsOperationLoading(false);
+    }
+  };
+
   const onStatusChange = (id: string, newStatus: SpendingStatus) => {
     // Find the current item to get its current status and description
     const currentLogs = activeTab === "recent" ? recentLogs : logs;
@@ -709,6 +760,7 @@ function App() {
                 onDeleteMultiple={onDeleteMultipleEntries}
                 onToggleSelection={toggleItemSelection}
                 onDeleteEntry={onDeleteEntry}
+                onEditEntry={onEditEntry}
                 onUpdateStatus={onStatusChange}
                 onUpdateMultipleStatus={onUpdateMultipleStatus}
                 pendingStatusChanges={pendingStatusChanges}
@@ -803,6 +855,14 @@ function App() {
           }))}
           onConfirm={onConfirmStatusChanges}
           onCancel={onCancelStatusChanges}
+        />
+      )}
+      {editingItem && (
+        <EditModal
+          item={editingItem.item}
+          entryType={editingItem.type}
+          onSave={onSaveEdit}
+          onCancel={() => setEditingItem(null)}
         />
       )}
     </>

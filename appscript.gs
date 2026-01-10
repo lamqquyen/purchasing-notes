@@ -109,12 +109,12 @@ function isRowEmpty_(row) {
 
 function updateOverallSheet_(overallSheet, paymentSheet) {
   try {
-    // Get all payment data
-    const paymentData = paymentSheet.getDataRange().getValues().slice(1); // Skip header
+  // Get all payment data
+  const paymentData = paymentSheet.getDataRange().getValues().slice(1); // Skip header
     console.log('Total payment rows:', paymentData.length);
-    
-    // Group by month/year
-    const monthData = {};
+  
+  // Group by month/year
+  const monthData = {};
     let processedCount = 0;
     let skippedCount = 0;
     let emptyRowCount = 0;
@@ -140,11 +140,11 @@ function updateOverallSheet_(overallSheet, paymentSheet) {
         skippedCount++;
         return;
       }
-      
-      const dateValue = row[1]; // Date column
-      const amount = Number(row[3]) || 0; // How much column
-      const status = String(row[4] || 'spent').toLowerCase(); // Status column
-      
+    
+    const dateValue = row[1]; // Date column
+    const amount = Number(row[3]) || 0; // How much column
+    const status = String(row[4] || 'spent').toLowerCase(); // Status column
+    
       // Log first few rows for debugging
       if (index < 5) {
         console.log('Row', index + 2, 'extracted - dateValue:', dateValue, 'type:', typeof dateValue, 'isDate:', dateValue instanceof Date, 'amount:', amount, 'status:', status);
@@ -196,45 +196,45 @@ function updateOverallSheet_(overallSheet, paymentSheet) {
       }
       
       // Get month/year key
-      const monthYear = getMonthYearKey_(dateObj);
-      
+    const monthYear = getMonthYearKey_(dateObj);
+    
       // Initialize month data if needed
-      if (!monthData[monthYear]) {
-        monthData[monthYear] = {
-          total: 0,
-          claimed: 0,
-          remaining: 0
-        };
-      }
-      
+    if (!monthData[monthYear]) {
+      monthData[monthYear] = {
+        total: 0,
+        claimed: 0,
+        remaining: 0
+      };
+    }
+    
       // Update totals
-      monthData[monthYear].total += amount;
-      
-      if (status === 'claimed') {
-        monthData[monthYear].claimed += amount;
-      } else {
-        monthData[monthYear].remaining += amount;
-      }
+    monthData[monthYear].total += amount;
+    
+    if (status === 'claimed') {
+      monthData[monthYear].claimed += amount;
+    } else {
+      monthData[monthYear].remaining += amount;
+    }
       
       processedCount++;
-    });
-    
+  });
+  
     // Filter out months with no data (total = 0)
     const monthsWithData = Object.keys(monthData).filter(monthYear => monthData[monthYear].total > 0);
-    
-    // Sort months (newest first)
+  
+  // Sort months (newest first)
     const sortedMonths = monthsWithData.sort((a, b) => {
-      // Parse month/year for comparison
-      const parseMonthYear = (str) => {
-        const parts = str.split(' / ');
-        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-        const month = monthNames.indexOf(parts[0]);
-        const year = parseInt(parts[1]);
-        return new Date(year, month);
-      };
-      return parseMonthYear(b).getTime() - parseMonthYear(a).getTime();
-    });
-    
+    // Parse month/year for comparison
+    const parseMonthYear = (str) => {
+      const parts = str.split(' / ');
+      const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+      const month = monthNames.indexOf(parts[0]);
+      const year = parseInt(parts[1]);
+      return new Date(year, month);
+    };
+    return parseMonthYear(b).getTime() - parseMonthYear(a).getTime();
+  });
+  
     // Clear existing data (keep header)
     const lastRow = overallSheet.getLastRow();
     if (lastRow > 1) {
@@ -242,22 +242,22 @@ function updateOverallSheet_(overallSheet, paymentSheet) {
     }
     
     // Write data to Overall sheet (only months with data)
-    if (sortedMonths.length > 0) {
-      const rows = sortedMonths.map(monthYear => [
-        monthYear,
-        monthData[monthYear].total,
-        monthData[monthYear].claimed,
-        monthData[monthYear].remaining
-      ]);
-      
+  if (sortedMonths.length > 0) {
+    const rows = sortedMonths.map(monthYear => [
+      monthYear,
+      monthData[monthYear].total,
+      monthData[monthYear].claimed,
+      monthData[monthYear].remaining
+    ]);
+    
       const range = overallSheet.getRange(2, 1, rows.length, 4);
       range.setValues(rows);
       
       // Format month/year column as TEXT to prevent Google Sheets from converting it to a date
       overallSheet.getRange(2, 1, rows.length, 1).setNumberFormat('@');
-      
-      // Format numbers
-      overallSheet.getRange(2, 2, rows.length, 3).setNumberFormat('#,##0');
+    
+    // Format numbers
+    overallSheet.getRange(2, 2, rows.length, 3).setNumberFormat('#,##0');
     }
   } catch (e) {
     console.error('Error in updateOverallSheet_:', e);
@@ -493,6 +493,65 @@ function doPost(e) {
         return jsonOutput({ ok: false, error: 'Record not found for update' });
       } else {
         return jsonOutput({ ok: false, error: 'Invalid type. Only spending is supported.' });
+      }
+    }
+
+    if (action === 'update') {
+      if (!id || !type) {
+        return jsonOutput({ ok: false, error: 'Missing id or type' });
+      }
+
+      if (type === 'spending') {
+        if (!occurredAt || amount === undefined || !description) {
+          return jsonOutput({ ok: false, error: 'Missing required fields for spending update' });
+        }
+        const dataRange = payment.getDataRange();
+        const values = dataRange.getValues();
+        
+        // Payment: A=ID, B=Date, C=Category, D=How much, E=Status, F=Created Date
+        for (let i = 1; i < values.length; i++) {
+          if (String(values[i][0]) === id) {
+            const row = i + 1;
+            payment.getRange(row, 2).setValue(new Date(occurredAt)); // Date
+            payment.getRange(row, 2).setNumberFormat('dd/MM/yyyy');
+            payment.getRange(row, 3).setValue(description); // Category/Description
+            payment.getRange(row, 4).setValue(Number(amount)); // Amount
+            payment.getRange(row, 4).setNumberFormat('#,##0');
+            if (status) {
+              payment.getRange(row, 5).setValue(status); // Status
+            }
+            
+            // Update overall sheet
+            updateOverallSheet_(overall, payment);
+            
+            return jsonOutput({ ok: true, updated: id });
+          }
+        }
+        return jsonOutput({ ok: false, error: 'Spending record not found for update' });
+      } else if (type === 'vatCollected') {
+        if (!occurredAt || amount === undefined) {
+          return jsonOutput({ ok: false, error: 'Missing required fields for VAT update' });
+        }
+        const ss = SpreadsheetApp.openById(SHEET_ID);
+        const vatSheet = vat || ss.getSheetByName(VAT_SHEET) || ss.insertSheet(VAT_SHEET);
+        ensureVatSheet_(vatSheet);
+        const values = vatSheet.getDataRange().getValues();
+        
+        // VAT: A=ID, B=Date, C=How much, D=Created Date
+        for (let i = 1; i < values.length; i++) {
+          if (String(values[i][0]) === id) {
+            const row = i + 1;
+            vatSheet.getRange(row, 2).setValue(new Date(occurredAt)); // Date
+            vatSheet.getRange(row, 2).setNumberFormat('dd/MM/yyyy');
+            vatSheet.getRange(row, 3).setValue(Number(amount)); // Amount
+            vatSheet.getRange(row, 3).setNumberFormat('#,##0');
+            
+            return jsonOutput({ ok: true, updated: id });
+          }
+        }
+        return jsonOutput({ ok: false, error: 'VAT record not found for update' });
+      } else {
+        return jsonOutput({ ok: false, error: 'Invalid type. Only spending and vatCollected are supported.' });
       }
     }
 

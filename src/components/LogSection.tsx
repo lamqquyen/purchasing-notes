@@ -37,6 +37,7 @@ interface LogSectionProps {
   onDeleteMultiple: () => void;
   onToggleSelection: (id: string, type: EntryType) => void;
   onDeleteEntry: (id: string, type: EntryType) => void;
+  onEditEntry?: (id: string, type: EntryType) => void;
   onUpdateStatus?: (id: string, status: 'spent' | 'requested' | 'claimed') => void;
   onUpdateMultipleStatus?: (status: 'spent' | 'requested' | 'claimed') => void;
   pendingStatusChanges?: Map<string, { from: 'spent' | 'requested' | 'claimed'; to: 'spent' | 'requested' | 'claimed'; description: string }>;
@@ -54,6 +55,7 @@ function LogsContent({
   onDeleteMultiple,
   onToggleSelection,
   onDeleteEntry,
+  onEditEntry,
   onUpdateStatus,
   onUpdateMultipleStatus,
   pendingStatusChanges,
@@ -69,6 +71,7 @@ function LogsContent({
   onDeleteMultiple: () => void;
   onToggleSelection: (id: string, type: EntryType) => void;
   onDeleteEntry: (id: string, type: EntryType) => void;
+  onEditEntry?: (id: string, type: EntryType) => void;
   onUpdateStatus?: (id: string, status: 'spent' | 'requested' | 'claimed') => void;
   onUpdateMultipleStatus?: (status: 'spent' | 'requested' | 'claimed') => void;
   pendingStatusChanges?: Map<string, { from: 'spent' | 'requested' | 'claimed'; to: 'spent' | 'requested' | 'claimed'; description: string }>;
@@ -134,6 +137,7 @@ function LogsContent({
                   isSelected={selectedItems.has(`spending:${item.id}`)}
                   onSelect={() => onToggleSelection(item.id, "spending")}
                   onDelete={() => onDeleteEntry(item.id, "spending")}
+                  onEdit={onEditEntry ? () => onEditEntry(item.id, "spending") : undefined}
                   onUpdateStatus={onUpdateStatus ? (id, status) => onUpdateStatus(id, status) : undefined}
                   pendingStatus={pendingStatusChanges?.get(item.id)?.to}
                 />
@@ -158,6 +162,7 @@ function LogsContent({
                   isSelected={selectedItems.has(`vatCollected:${item.id}`)}
                   onSelect={() => onToggleSelection(item.id, "vatCollected")}
                   onDelete={() => onDeleteEntry(item.id, "vatCollected")}
+                  onEdit={onEditEntry ? () => onEditEntry(item.id, "vatCollected") : undefined}
                   showCheckbox={true}
                   onUpdateStatus={undefined}
                 />
@@ -192,6 +197,7 @@ export function LogSection({
   onDeleteMultiple,
   onToggleSelection,
   onDeleteEntry,
+  onEditEntry,
   onUpdateStatus,
   onUpdateMultipleStatus,
   pendingStatusChanges,
@@ -243,11 +249,12 @@ export function LogSection({
               selectionMode={selectionMode}
               onSelectionModeChange={onSelectionModeChange}
               selectedItems={selectedItems}
-              onSelectAll={onSelectAll}
-              onClearSelection={onClearSelection}
+                  onSelectAll={onSelectAll}
+                  onClearSelection={onClearSelection}
               onDeleteMultiple={onDeleteMultiple}
               onToggleSelection={onToggleSelection}
               onDeleteEntry={onDeleteEntry}
+              onEditEntry={onEditEntry}
               onUpdateStatus={onUpdateStatus}
               onUpdateMultipleStatus={onUpdateMultipleStatus}
               pendingStatusChanges={pendingStatusChanges}
@@ -295,11 +302,12 @@ export function LogSection({
               selectionMode={selectionMode}
               onSelectionModeChange={onSelectionModeChange}
               selectedItems={selectedItems}
-              onSelectAll={onSelectAll}
-              onClearSelection={onClearSelection}
+                  onSelectAll={onSelectAll}
+                  onClearSelection={onClearSelection}
               onDeleteMultiple={onDeleteMultiple}
               onToggleSelection={onToggleSelection}
               onDeleteEntry={onDeleteEntry}
+              onEditEntry={onEditEntry}
               onUpdateStatus={onUpdateStatus}
               onUpdateMultipleStatus={onUpdateMultipleStatus}
               pendingStatusChanges={pendingStatusChanges}

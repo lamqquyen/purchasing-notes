@@ -141,6 +141,38 @@ export async function updateEntryStatus(id: string, type: SheetEntry['type'], st
   return handleApiResponse(response, 'Failed to update status.');
 }
 
+export async function updateEntry(id: string, type: 'spending', data: { occurredAt: string; amount: number; description: string; status?: 'spent' | 'requested' | 'claimed' }) {
+  if (!endpoint) {
+    throw new Error('Missing Google Sheet webhook URL (VITE_SHEET_WEBAPP_URL).');
+  }
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/plain'
+    },
+    body: JSON.stringify({ action: 'update', id, type, ...data })
+  });
+
+  return handleApiResponse(response, 'Failed to update entry.');
+}
+
+export async function updateVatEntry(id: string, data: { occurredAt: string; amount: number }) {
+  if (!endpoint) {
+    throw new Error('Missing Google Sheet webhook URL (VITE_SHEET_WEBAPP_URL).');
+  }
+
+  const response = await fetch(endpoint, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'text/plain'
+    },
+    body: JSON.stringify({ action: 'update', id, type: 'vatCollected', ...data })
+  });
+
+  return handleApiResponse(response, 'Failed to update VAT entry.');
+}
+
 // Helper function to handle GET API responses with JSON parsing
 async function handleGetApiResponse(response: Response, defaultError: string): Promise<any> {
   const contentType = response.headers.get('content-type');

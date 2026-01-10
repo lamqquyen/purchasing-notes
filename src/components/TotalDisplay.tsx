@@ -144,7 +144,7 @@ export function TotalDisplay({ totals, refreshKey }: TotalDisplayProps) {
         </div>
       ) : (
         <>
-          <div style={{ 
+      <div style={{ 
             marginBottom: "16px",
             display: "flex",
             justifyContent: "center",
@@ -182,19 +182,19 @@ export function TotalDisplay({ totals, refreshKey }: TotalDisplayProps) {
             </select>
           </div>
           <div className="totals-grid">
-              <div>
-                <h3>Total Paid</h3>
+        <div>
+          <h3>Total Paid</h3>
                 <p className="amount">{displayTotals.totalPaid.toLocaleString("vi-VN")} đ</p>
-              </div>
-              <div>
-                <h3>Total Claimed</h3>
+        </div>
+        <div>
+          <h3>Total Claimed</h3>
                 <p className="amount">{displayTotals.totalClaimed.toLocaleString("vi-VN")} đ</p>
-              </div>
-              <div>
-                <h3>Remaining</h3>
+        </div>
+        <div>
+          <h3>Remaining</h3>
                 <p className="amount">{displayTotals.remaining.toLocaleString("vi-VN")} đ</p>
-              </div>
-            </div>
+        </div>
+      </div>
         </>
       )}
     </StyledTotalDisplay>

@@ -1,7 +1,7 @@
 import type { SheetLogItem } from "../services/sheets";
 import type { EntryType, SpendingStatus } from "../types";
 import { formatDateDDMMYYYY, getStatusColor, getStatusLabel } from "../utils";
-import { Checkbox, LogRow as StyledLogRow, DeleteButton, SelectRow, SelectButton } from "../styles";
+import { Checkbox, LogRow as StyledLogRow, DeleteButton, SelectRow, SelectButton, Button } from "../styles";
 
 interface LogRowProps {
   item: SheetLogItem;
@@ -9,12 +9,13 @@ interface LogRowProps {
   isSelected: boolean;
   onSelect: () => void;
   onDelete: () => void;
+  onEdit?: () => void;
   onUpdateStatus?: (id: string, status: SpendingStatus) => void;
   showCheckbox?: boolean;
   pendingStatus?: SpendingStatus;
 }
 
-export function LogRow({ item, entryType, isSelected, onSelect, onDelete, onUpdateStatus, showCheckbox = true, pendingStatus }: LogRowProps) {
+export function LogRow({ item, entryType, isSelected, onSelect, onDelete, onEdit, onUpdateStatus, showCheckbox = true, pendingStatus }: LogRowProps) {
   const currentStatus = (item.status || "spent") as SpendingStatus;
   const displayStatus = pendingStatus || currentStatus;
   const hasPendingChange = pendingStatus !== undefined && pendingStatus !== currentStatus;
@@ -32,9 +33,9 @@ export function LogRow({ item, entryType, isSelected, onSelect, onDelete, onUpda
 
       <div className="log-main">
         <span className="log-date">{formatDateDDMMYYYY(item.date)}</span>
-        {entryType === "spending" && (
+      {entryType === "spending" && (
           <span className="log-desc">{item.description || "—"}</span>
-        )}
+      )}
         <strong className="log-amount">
           {item.amount.toLocaleString("vi-VN")} đ
         </strong>
@@ -116,9 +117,26 @@ export function LogRow({ item, entryType, isSelected, onSelect, onDelete, onUpda
         </span>
       )}
 
-      <DeleteButton className="delete-btn" type="button" onClick={onDelete}>
-        Delete
-      </DeleteButton>
+      <div style={{ display: "flex", gap: "8px", flexShrink: 0 }}>
+        {onEdit && (
+          <Button
+            type="button"
+            onClick={onEdit}
+            style={{
+              background: "rgba(33, 53, 96, 0.1)",
+              color: "#213560",
+              padding: "6px 12px",
+              fontSize: "12px",
+              width: "auto",
+            }}
+          >
+            Edit
+          </Button>
+        )}
+        <DeleteButton className="delete-btn" type="button" onClick={onDelete}>
+          Delete
+        </DeleteButton>
+      </div>
     </StyledLogRow>
   );
 }
